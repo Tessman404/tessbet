@@ -333,7 +333,7 @@ class WaitingForClaude(RuntimeError):
     """Mode « tâche Claude » : l'analyse a été demandée, la réponse n'est pas encore arrivée."""
 
 
-GH_REPO = "Tessman404/tessbet"
+GH_REPO = "Tessman404/tessbet-inbox"
 
 
 def gh_call(method, path, token, body=None):
