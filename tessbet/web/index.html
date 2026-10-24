@@ -172,6 +172,7 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
 .wallet { display:flex; align-items:center; gap:8px; margin:8px 0; color:#fff; flex-wrap:wrap; }
 .wallet b { min-width:92px; }
 .wallet input { width:96px; min-height:38px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; }
+.copy { margin-top:10px; }
 .analyse { margin:10px 0 4px; padding:12px 14px; background:#fff; border-radius:10px; border:1px solid #d5e0da; }
 .analyse h3 { margin:0 0 8px; font:700 1rem var(--display); }
 .analyse p { margin:0 0 9px; line-height:1.45; font-size:.93rem; color:var(--ink); }
@@ -260,6 +261,29 @@ function toast(msg, err = false) {
 }
 
 /* ---------------- Aujourd'hui ---------------- */
+function shareText(s) {
+  const cl = s.claude || {};
+  const sport = SPORT[s.sport] || '';
+  const lines = [`${sport} ${s.league} – ${s.pick_label}`, `${s.match} (${s.kickoff_local})`,
+    `Cote ${odds(s.odds)} (${s.bookmaker}) – ${pct(s.prob)} de chances estimées`];
+  if (cl.resume) lines.push('', `Claude : ${cl.resume}`);
+  if (cl.analyse) lines.push('', cl.analyse);
+  if (cl.sources && cl.sources.length) lines.push('', 'Sources : ' + cl.sources.join(' '));
+  lines.push('', 'Aucun pari n\'est sûr : ne mise que ce que tu peux perdre. Aide : Joueurs Info Service 09 74 75 13 13.', '— Tessbet');
+  return lines.join('\n');
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
+  const t = document.createElement('textarea');
+  t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+  document.body.append(t); t.focus(); t.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) {}
+  t.remove();
+  return ok;
+}
+
 function ticket(s) {
   const bank = state.stats ? state.stats.bankroll : 0;
   const suggested = Math.max(0.5, Math.round(bank * s.stake_pct * 2) / 2);
@@ -320,6 +344,8 @@ function ticket(s) {
       offerChips,
       claudeBox,
       analyse,
+      el('button', { class: 'btn small copy', type: 'button', text: 'Copier l\'analyse pour la partager',
+        onclick: async () => toast((await copyText(shareText(s))) ? 'Analyse copiée : colle-la dans ta conversation.' : 'Copie impossible sur cet appareil.', false) }),
       el('details', {}, el('summary', { text: 'Pourquoi ce pari ?' }), el('ul', {}, details)),
       el('div', { class: 'actions' },
         el('span', { class: 'stake' }, 'Mise conseillée ', el('b', { text: eur(suggested) })),
@@ -458,6 +484,8 @@ function renderPast(days) {
       el('div', { class: 'top' },
         el('div', {}, el('div', { class: 'name', text: s.pick_label }),
           el('div', { class: 'sub', text: `${s.match} – cote ${odds(s.odds)} – ${pct(s.prob)}` + (s.claude ? ' – Claude : ' + s.claude.verdict : '') }))),
+      el('button', { class: 'btn small copy', type: 'button', text: 'Copier l\'analyse',
+        onclick: async () => toast((await copyText(shareText(s))) ? 'Analyse copiée.' : 'Copie impossible sur cet appareil.') }),
       s.claude && s.claude.analyse ? el('details', {}, el('summary', { text: 'Relire l\'analyse de Claude' }),
         el('div', { class: 'analyse' }, s.claude.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() })))) : null)));
   });
