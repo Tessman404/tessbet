@@ -285,6 +285,96 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .why li small { display: block; color: var(--chalk-dim); font-size: .84rem; }
 .why p { margin: 8px 0 0; color: var(--chalk-dim); font-size: .85rem; }
 @media (max-width: 640px) { .horizon { flex-direction: column; align-items: stretch; } .segs { display: grid; grid-template-columns: 1fr 1fr; } }
+/* ---- Matchs : liste des matchs + ticket à composer ---- */
+.betcols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 22px; align-items: start; }
+.slipcol { order: -1; }
+@media (min-width: 900px) { .betcols { grid-template-columns: minmax(0, 1fr) 380px; } .slipcol { order: 2; position: sticky; top: 64px; max-height: calc(100vh - 76px); overflow-y: auto; margin: 0 -16px; padding: 0 16px 28px; } }
+.slip { position: relative; margin: 0 0 18px; padding: 16px; background: var(--ticket); color: var(--ink); border-radius: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.28); }
+.slip h2 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0; font: 700 1.4rem/1.15 var(--display); }
+.slip h2 small { font: 600 .85rem var(--text); color: var(--ink-2); }
+.slip .hint { margin: 8px 0 0; font-size: .9rem; color: var(--ink-2); }
+.slip input, .slip select { min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1.5px solid #b9c8bf; background: #fff; color: var(--ink); }
+.slip label { display: block; margin-bottom: 3px; font-size: .82rem; color: var(--ink-2); }
+.sl { margin: 10px 0 0; padding: 0; list-style: none; }
+.sl li { display: grid; grid-template-columns: minmax(0, 1fr) 76px 34px; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #d5e0da; }
+.sl li:first-child { border-top: 1px solid #d5e0da; }
+.sl .lg b { display: block; font-weight: 700; overflow-wrap: anywhere; }
+.sl .lg small { display: block; font-size: .82rem; color: var(--ink-2); overflow-wrap: anywhere; }
+.sl input { width: 100%; font: 700 1rem var(--display); text-align: center; }
+.sl .x { width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-2); font-size: 1.4rem; line-height: 1; }
+.sl .x:hover { background: #e3ebe7; color: var(--ink); }
+.slip .pills { margin-top: 12px; }
+.slip .pill { color: var(--ink-2); border-color: #b9c8bf; }
+.slip .pill.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.manual { margin-top: 12px; }
+.manual summary { color: var(--turf-3); }
+.manual .mf { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.manual .mf .wide { grid-column: 1 / -1; }
+.manual .mf input, .manual .mf select { width: 100%; }
+.perf { position: relative; margin: 16px -16px 14px; border-top: 2px dashed rgba(16,32,26,.4); }
+.perf::before, .perf::after { content: ""; position: absolute; top: -11px; width: 20px; height: 20px; border-radius: 50%; background: var(--turf); }
+.perf::before { left: -10px; } .perf::after { right: -10px; }
+.pay { display: grid; grid-template-columns: 1fr 110px; gap: 10px; }
+.pay select, .pay input { width: 100%; }
+.stubbox { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--yellow); }
+.stubbox small { display: block; font-size: .78rem; line-height: 1.25; color: rgba(16,32,26,.78); }
+.stubbox b { font: 700 1.7rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.stubbox .totin { width: 104px; min-height: 44px; border: 1.5px solid rgba(16,32,26,.4); background: rgba(255,255,255,.55); font: 700 1.5rem var(--display); text-align: center; }
+.stubbox .r { text-align: right; }
+.slip .note2 { margin: 8px 0 0; font-size: .82rem; color: var(--ink-2); }
+.slip .note2.over { color: #a32a2d; font-weight: 600; }
+.slip .linkbtn { padding: 0; border: 0; background: none; color: var(--turf-3); font-weight: 600; font-size: .82rem; text-decoration: underline; }
+.slip .save { width: 100%; margin-top: 14px; min-height: 48px; font-size: 1.02rem; }
+.mtools { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap; margin: 4px 0 6px; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { min-height: 36px; padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--turf-3); background: transparent; color: var(--chalk-dim); font-weight: 600; }
+.pill:hover { color: #fff; }
+.pill.on { background: var(--turf-3); border-color: var(--chalk-dim); color: #fff; }
+.mstamp { margin: 6px 0 0; font-size: .85rem; color: var(--chalk-dim); }
+.confirmbox { margin: 10px 0 0; padding: 12px 14px; border: 1.5px dashed var(--yellow); border-radius: 12px; }
+.confirmbox p { margin: 0 0 10px; font-size: .92rem; color: var(--chalk); }
+.confirmbox .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.mday { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 22px 0 10px; font: 700 1.3rem/1.2 var(--display); color: #fff; }
+.mday span { font: 400 .95rem var(--text); color: var(--chalk-dim); }
+.mcard { margin: 0 0 10px; padding: 12px 14px; border-radius: 14px; background: var(--turf-2); }
+.mcard .mt { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .85rem; color: var(--chalk-dim); }
+.mcard .mt .tag { margin-left: auto; }
+.mcard .mn { margin: 4px 0 10px; font-size: 1.05rem; font-weight: 600; color: #fff; overflow-wrap: anywhere; }
+.tag { padding: 1px 9px; border: 1.5px solid var(--yellow); border-radius: 999px; font-size: .76rem; font-weight: 700; color: var(--yellow); white-space: nowrap; }
+.outs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.outs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.out { display: flex; flex-direction: column; gap: 1px; min-height: 66px; padding: 8px 10px; text-align: left; border: 1.5px solid var(--turf-3); border-radius: 10px; background: var(--turf); color: var(--chalk); }
+.out small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; color: var(--chalk-dim); }
+.out b { font: 700 1.4rem/1.1 var(--display); font-variant-numeric: tabular-nums; color: #fff; }
+.out em { font-style: normal; font-size: .76rem; color: var(--chalk-dim); }
+.out:hover { border-color: var(--chalk-dim); }
+.out.off { box-shadow: inset 0 3px 0 var(--yellow); }
+.out.on { background: var(--yellow); border-color: var(--yellow); }
+.out.on small, .out.on b, .out.on em { color: var(--ink); }
+.slipbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px calc(10px + env(safe-area-inset-bottom)); background: var(--yellow); color: var(--ink); font-weight: 700; box-shadow: 0 -6px 18px rgba(0,0,0,.3); }
+.slipbar button { min-height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-weight: 700; }
+.has-bar { padding-bottom: 84px; }
+.has-bar .toast { bottom: 84px; }
+@media (min-width: 900px) { .slipbar { display: none; } .has-bar { padding-bottom: 32px; } .has-bar .toast { bottom: 24px; } }
+.sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* ---- combiné dans Mes mises et En direct ---- */
+.legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
+.legs li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--turf-3); }
+.legs .lg { flex: 1; min-width: 0; }
+.legs .lg b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.legs .lg small { color: var(--chalk-dim); font-size: .85rem; overflow-wrap: anywhere; }
+.lgb { display: flex; align-items: center; gap: 6px; flex: none; }
+.mini { width: 40px; height: 40px; border: 1.5px solid var(--chalk-dim); border-radius: 10px; background: transparent; color: var(--chalk); font-size: 1rem; font-weight: 700; }
+.mini.win:hover, .mini.win.hint { background: var(--green); border-color: var(--green); color: var(--ink); }
+.mini.lose:hover, .mini.lose.hint { background: var(--red); border-color: var(--red); color: #fff; }
+.rchip { padding: 3px 10px; border: 1.5px solid var(--chalk-dim); border-radius: 999px; font-size: .82rem; font-weight: 700; }
+.rchip.win { background: var(--green); border-color: var(--green); color: var(--ink); }
+.rchip.lose { background: var(--red); border-color: var(--red); color: #fff; }
+.legs .lsc { flex: none; font: 700 1.15rem/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.legs .lst { flex: none; max-width: 9.5rem; font-size: .82rem; text-align: right; color: var(--chalk); }
+.legs .lst.winning, .legs .lst.won { color: #6fe3a1; }
+.legs .lst.losing, .legs .lst.lost { color: #ff9a9c; }
+@media (max-width: 520px) { .legs li { flex-wrap: wrap; } .legs .lst { max-width: none; margin-left: auto; } }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
@@ -305,6 +395,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
   <span class="brand">Tessbet</span>
   <nav aria-label="Navigation">
     <button type="button" data-tab="today" aria-current="page">Aujourd'hui</button>
+    <button type="button" data-tab="bet">Matchs</button>
     <button type="button" data-tab="live">En direct</button>
     <button type="button" data-tab="past">Passés</button>
     <button type="button" data-tab="track">Mes mises</button>
@@ -321,6 +412,14 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
     <div id="tickets"></div>
     <details class="tech" id="tech" hidden><summary id="techsum"></summary><ul id="warnings"></ul></details>
     <p class="note" id="disclaimer"></p>
+  </section>
+
+  <section id="tab-bet" hidden>
+    <div class="pagehead"><h1>Matchs</h1><p class="date" id="betdate"></p></div>
+    <div class="betcols">
+      <div class="matchcol" id="matchlist"></div>
+      <aside class="slipcol"><div class="slip" id="slip" aria-label="Mon ticket"></div></aside>
+    </div>
   </section>
 
   <section id="tab-live" hidden>
@@ -344,11 +443,13 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
   </section>
 </main>
 
+<div class="slipbar" id="slipbar" hidden><span id="slipbar-txt"></span><button type="button" id="slipbar-go">Voir mon ticket</button></div>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script>
 const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾' };
-const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null };
+const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null,
+  matches: null, slip: { legs: [], mode: 'combo', book: '', stake: '', total: null, filter: 'all', confirmRefresh: false, refreshing: false, manualEl: null } };
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -681,15 +782,37 @@ function renderToday() {
 }
 
 /* ---------------- Mes mises ---------------- */
+const liveSuffix = x => x.live ? (x.live.state === 'in' ? ` – 🔴 en direct ${x.live.score[0]}-${x.live.score[1]} (${x.live.clock})` : x.live.state === 'post' ? ` – terminé ${x.live.score[0]}-${x.live.score[1]}` : '') : '';
+const reloadBets = async () => { await loadStats(); await loadBets(); renderTrack(); };
+
+/* Les matchs d'un combiné : chacun se valide séparément, le combiné s'en déduit. */
+function comboLegs(b) {
+  const setLeg = (i, r) => async () => { try { await api(`bets/${b.id}/legs/${i}`, 'POST', { result: r }); await reloadBets(); } catch (e) { toast(e.message, true); } };
+  const names = { win: 'Gagné', lose: 'Perdu', void: 'Annulé' };
+  return el('ul', { class: 'legs' }, b.legs.map((l, i) => {
+    const r = l.result || 'pending', code = l.status && l.status.code;
+    const hint = r === 'pending' && (code === 'won' || code === 'lost') ? (code === 'won' ? 'win' : 'lose') : null;
+    return el('li', {},
+      el('div', { class: 'lg' }, el('b', { text: l.pick }), el('small', { text: `${l.match} – cote ${odds(l.odds)}` + liveSuffix(l) })),
+      r === 'pending'
+        ? el('span', { class: 'lgb' }, [['win', '✓'], ['lose', '✗'], ['void', '○']].map(([k, sym]) =>
+            el('button', { class: 'mini ' + k + (hint === k ? ' hint' : ''), type: 'button', title: names[k], 'aria-label': `${names[k]} : ${l.pick}`, text: sym, onclick: setLeg(i, k) })))
+        : el('span', { class: 'lgb' }, el('span', { class: 'rchip ' + r, text: names[r] }),
+            el('button', { class: 'mini', type: 'button', title: 'Remettre en cours', 'aria-label': 'Remettre en cours : ' + l.pick, text: '↺', onclick: setLeg(i, 'pending') })));
+  }));
+}
+
 function betRow(b) {
-  const profit = b.result === 'win' ? b.stake * (b.odds - 1) : b.result === 'lose' ? -b.stake : 0;
+  const combo = !!(b.legs && b.legs.length);
+  const eff = b.eff_odds || b.odds;
+  const profit = b.result === 'win' ? b.stake * (eff - 1) : b.result === 'lose' ? -b.stake : 0;
   const label = { win: 'Gagné', lose: 'Perdu', void: 'Annulé', pending: 'En cours' }[b.result];
   const res = el('span', { class: 'res ' + (profit > 0 ? 'pos' : profit < 0 ? 'neg' : ''), text: b.result === 'pending' ? 'En cours' : `${label} ${profit ? signedEur(profit) : ''}`.trim() });
-  const setRes = r => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await loadStats(); await loadBets(); renderTrack(); } catch (e) { toast(e.message, true); } };
+  const setRes = r => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await reloadBets(); } catch (e) { toast(e.message, true); } };
   const btns = el('div', { class: 'btns' });
   if (b.result === 'pending') {
-    btns.append(el('button', { class: 'btn small win', type: 'button', text: 'Gagné', onclick: setRes('win') }),
-      el('button', { class: 'btn small lose', type: 'button', text: 'Perdu', onclick: setRes('lose') }),
+    btns.append(el('button', { class: 'btn small win', type: 'button', text: combo ? 'Combiné gagné' : 'Gagné', onclick: setRes('win') }),
+      el('button', { class: 'btn small lose', type: 'button', text: combo ? 'Combiné perdu' : 'Perdu', onclick: setRes('lose') }),
       el('button', { class: 'btn small void', type: 'button', text: 'Annulé', onclick: setRes('void') }));
   } else {
     btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Remettre en cours', onclick: setRes('pending') }));
@@ -700,18 +823,23 @@ function betRow(b) {
   eb.value = b.book || '';
   const edit = el('div', { class: 'edit' }, el('label', { text: 'Site' }), eb, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es,
     el('button', { class: 'btn small', type: 'button', text: 'Valider', onclick: async () => {
-      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value), book: eb.value }); await loadStats(); await loadBets(); renderTrack(); toast('Pari modifié.'); }
+      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value), book: eb.value }); await reloadBets(); toast('Pari modifié.'); }
       catch (e) { toast(e.message, true); }
     } }));
   btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Modifier cote / mise', onclick: () => edit.classList.toggle('open') }));
   btns.append(el('button', { class: 'btn small del', type: 'button', text: 'Supprimer', onclick: async () => {
     if (!confirm('Supprimer ce pari de l\'historique ?')) return;
-    try { await api('bets/' + b.id, 'DELETE'); await loadStats(); await loadBets(); renderTrack(); } catch (e) { toast(e.message, true); }
+    try { await api('bets/' + b.id, 'DELETE'); await reloadBets(); } catch (e) { toast(e.message, true); }
   } }));
+  const sub = combo
+    ? `Cote ${odds(b.odds)}` + (eff !== b.odds ? ` (${odds(eff)} sans le match annulé)` : '') + ` – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '')
+    : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + liveSuffix(b);
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + (b.live ? (b.live.state === 'in' ? ` – 🔴 en direct ${b.live.score[0]}-${b.live.score[1]} (${b.live.clock})` : b.live.state === 'post' ? ` – terminé ${b.live.score[0]}-${b.live.score[1]}` : '') : '') })),
+      el('div', {}, el('div', { class: 'name', text: combo ? `Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : b.pick }), el('div', { class: 'sub', text: sub })),
       res),
+    combo ? comboLegs(b) : null,
+    combo && b.result === 'pending' && b.status ? el('div', { class: 'badge ' + b.status.code, text: b.status.text }) : null,
     btns, edit);
 }
 
@@ -770,10 +898,11 @@ function renderTrack() {
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
       el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui. Tu peux changer la limite dans Réglages.` })),
     evolution(s),
-    el('h2', { class: 'section', text: 'Historique' }));
+    el('div', { class: 'sechead' }, el('h2', { class: 'section', text: 'Historique' }),
+      el('button', { class: 'btn small refresh', type: 'button', text: '+ Ajouter un pari', onclick: () => showTab('bet') })));
   if (!state.bets.length) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucune mise pour l\'instant' }),
-      el('p', { text: 'Quand tu paries, appuie sur « J\'ai parié » sur le ticket pour suivre ton argent ici.' })));
+      el('p', { text: 'Quand tu paries, appuie sur « J\'ai parié » sur un ticket, ou compose ton pari (seul ou en combiné) dans l\'onglet Matchs.' })));
   } else {
     state.bets.forEach(b => box.append(betRow(b)));
   }
@@ -804,12 +933,15 @@ function renderPast(days) {
 
 /* ---------------- En direct ---------------- */
 let liveTimer = null;
+const badgeOf = (st, l, after = '') => st ? el('div', { class: 'badge ' + st.code, text: (st.code === 'won' ? '✅ ' : st.code === 'lost' ? '❌ ' : st.code === 'winning' ? '🟢 ' : st.code === 'losing' ? '🔴 ' : '🟡 ') + st.text + after })
+  : el('div', { class: 'badge none', text: l && l.state === 'in' ? 'Statut indisponible' : 'Pas encore commencé' });
+
 function liveCard(b) {
+  if (b.legs && b.legs.length) return liveComboCard(b);
   const [home, away] = (b.match || '').split(/\s+[–-]\s+/);
   const l = b.live, st = b.status;
   const stateTxt = !l ? 'En attente du coup d\'envoi' : l.state === 'in' ? null : l.state === 'post' ? 'Terminé' : 'Pas commencé';
-  const badge = st ? el('div', { class: 'badge ' + st.code, text: (st.code === 'won' ? '✅ ' : st.code === 'lost' ? '❌ ' : st.code === 'winning' ? '🟢 ' : st.code === 'losing' ? '🔴 ' : '🟡 ') + st.text + (st.code === 'won' || st.code === 'lost' ? ' (match terminé)' : '') })
-    : el('div', { class: 'badge none', text: l && l.state === 'in' ? 'Statut indisponible' : 'Pas encore commencé' });
+  const badge = badgeOf(st, l, st && (st.code === 'won' || st.code === 'lost') ? ' (match terminé)' : '');
   const confirm = (r) => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await loadStats(); await renderLive(); toast('Résultat enregistré.'); } catch (e) { toast(e.message, true); } };
   return el('div', { class: 'livecard' },
     el('div', { class: 'lt' }, el('span', { text: `${SPORT[b.sport] || ''} ${b.kickoff ? new Date(b.kickoff).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}` }),
@@ -817,9 +949,33 @@ function liveCard(b) {
     el('div', { class: 'teams' }, el('span', { text: home || b.match }),
       el('span', { class: 'score', text: l ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
     badge,
-    el('div', { class: 'mine', text: `Mon pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + ` – gain possible ${eur(b.stake * (b.odds - 1))}` }),
+    el('div', { class: 'mine', text: `Mon pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + ` – gain possible ${eur(b.stake * ((b.eff_odds || b.odds) - 1))}` }),
     b.result === 'pending' && st && (st.code === 'won' || st.code === 'lost')
       ? el('div', { class: 'btns' }, el('button', { class: 'btn small ' + (st.code === 'won' ? 'win' : 'lose'), type: 'button', text: st.code === 'won' ? 'Valider : gagné' : 'Valider : perdu', onclick: confirm(st.code === 'won' ? 'win' : 'lose') })) : null);
+}
+
+/* Un combiné : un seul bloc, le score de chacun de ses matchs. */
+function liveComboCard(b) {
+  const done = { win: '✅ Gagné', lose: '❌ Perdu', void: 'Annulé' };
+  const setLeg = (i, r) => async () => { try { await api(`bets/${b.id}/legs/${i}`, 'POST', { result: r }); await loadStats(); await renderLive(); toast('Résultat enregistré.'); } catch (e) { toast(e.message, true); } };
+  const rows = b.legs.map((l, i) => {
+    const lv = l.live, st = l.status, r = l.result || 'pending';
+    const code = r !== 'pending' ? '' : st ? st.code : '';
+    const sc = lv ? `${lv.score[0]}-${lv.score[1]}` : '–';
+    const clock = lv ? (lv.state === 'in' ? ' ' + (lv.clock || '') : lv.state === 'post' ? ' fini' : '') : '';
+    return el('li', {},
+      el('div', { class: 'lg' }, el('b', { text: l.pick }), el('small', { text: l.match })),
+      el('span', { class: 'lsc', text: sc + clock }),
+      el('span', { class: 'lst ' + code, text: r !== 'pending' ? done[r] : st ? st.text : 'Pas commencé' }),
+      r === 'pending' && (code === 'won' || code === 'lost')
+        ? el('button', { class: 'btn small ' + (code === 'won' ? 'win' : 'lose'), type: 'button', text: code === 'won' ? 'Valider : gagné' : 'Valider : perdu', onclick: setLeg(i, code === 'won' ? 'win' : 'lose') }) : null);
+  });
+  const eff = b.eff_odds || b.odds;
+  return el('div', { class: 'livecard' },
+    el('div', { class: 'lt' }, el('span', { text: `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` }), el('span', { text: `cote ${odds(b.odds)}` })),
+    el('ul', { class: 'legs' }, rows),
+    badgeOf(b.status, null),
+    el('div', { class: 'mine', text: `Mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + ` – gain possible ${eur(b.stake * (eff - 1))}` }));
 }
 async function renderLive() {
   const box = document.getElementById('live-box');
@@ -833,6 +989,233 @@ async function renderLive() {
     return;
   }
   list.forEach(b => box.append(liveCard(b)));
+}
+
+/* ---------------- Matchs : parier librement, seul ou en combiné ---------------- */
+const baseKey = k => k.replace(/_fr$/, '');
+const round2 = x => Math.round(x * 100) / 100;
+const num = v => Number(String(v).replace(',', '.'));
+const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 2 ? 'à l\'instant' : m < 90 ? `il y a ${m} min` : m < 36 * 60 ? `il y a ${Math.round(m / 60)} h` : 'il y a plus d\'un jour'; };
+const isCombo = s => s.legs.length > 1 && s.mode === 'combo';
+const comboOdds = s => s.total != null ? s.total : round2(s.legs.reduce((p, l) => p * l.odds, 1));
+const oddsAt = (src, book) => { const f = book && (src.offers || []).find(x => baseKey(x.key) === book); return f ? f.odds : src.best; };
+async function loadMatches() { state.matches = await api('matches'); }
+
+function toggleOutcome(m, o) {
+  const s = state.slip, key = m.id + '|' + o.name;
+  if (s.legs.some(l => l.key === key)) s.legs = s.legs.filter(l => l.key !== key);
+  else {
+    s.legs = s.legs.filter(l => l.event !== m.id);   // une seule issue par match
+    s.legs.push({ key, event: m.id, match: `${m.home} – ${m.away}`, pick: o.label, pick_team: o.name === 'Draw' ? undefined : o.name,
+      best: o.odds, offers: o.offers, odds: oddsAt({ offers: o.offers, best: o.odds }, s.book), sport: m.sport, league_key: m.league_key,
+      kickoff: m.commence, time: m.kickoff_local });
+    toast(`Ajouté au ticket (${s.legs.length}).`);
+  }
+  s.total = null; renderBet();
+}
+
+function outcomeBtn(m, o) {
+  const on = state.slip.legs.some(l => l.key === m.id + '|' + o.name);
+  const name = o.name === 'Draw' ? 'Nul' : o.name;
+  return el('button', { class: 'out' + (on ? ' on' : '') + (o.official ? ' off' : ''), type: 'button', 'aria-pressed': String(on), title: o.label,
+    'aria-label': `${o.label}, cote ${odds(o.odds)}`, onclick: () => toggleOutcome(m, o) },
+    el('small', { text: name }), el('b', { text: odds(o.odds) }), el('em', { text: pct(o.prob) }));
+}
+
+function matchCard(m) {
+  return el('article', { class: 'mcard' },
+    el('div', { class: 'mt' }, el('span', { text: `${SPORT[m.sport] || ''} ${m.league}` }),
+      m.outcomes.some(o => o.official) ? el('span', { class: 'tag', text: 'Proposé par Tessbet' }) : null, el('span', { text: m.kickoff_local })),
+    el('h3', { class: 'mn', text: `${m.home} – ${m.away}` }),
+    el('div', { class: 'outs' + (m.outcomes.length === 2 ? ' two' : '') }, m.outcomes.map(o => outcomeBtn(m, o))));
+}
+
+function refreshBlock(d) {
+  const s = state.slip;
+  if (d.mode !== 'live') return null;
+  if (s.refreshing) return el('p', { class: 'mstamp', text: 'Mise à jour des cotes…' });
+  if (!s.confirmRefresh) return el('button', { class: 'btn small refresh', type: 'button', text: 'Mettre à jour les cotes', onclick: () => { s.confirmRefresh = true; renderMatchList(); } });
+  return el('div', { class: 'confirmbox' },
+    el('p', { text: `Cela utilise environ ${d.refresh_cost} crédits de ton quota de cotes (500 par mois). Continuer ?` }),
+    el('div', { class: 'btns' },
+      el('button', { class: 'btn small win', type: 'button', text: 'Oui, mettre à jour', onclick: async () => {
+        s.refreshing = true; s.confirmRefresh = false; renderMatchList();
+        try {
+          const r = await api('matches/refresh', 'POST', { confirm: true });
+          state.matches = r;
+          toast('Cotes à jour' + (r.quota ? ` (crédits restants : ${r.quota}).` : '.'));
+        } catch (e) { toast(e.message, true); }
+        s.refreshing = false; renderBet();
+      } }),
+      el('button', { class: 'btn small void', type: 'button', text: 'Annuler', onclick: () => { s.confirmRefresh = false; renderMatchList(); } })));
+}
+
+function renderMatchList() {
+  const box = document.getElementById('matchlist'); box.replaceChildren();
+  const d = state.matches; if (!d) return;
+  const s = state.slip, all = d.matches;
+  const count = k => k === 'all' ? all.length : all.filter(m => m.sport === k).length;
+  if (s.filter !== 'all' && !count(s.filter)) s.filter = 'all';
+  document.getElementById('betdate').textContent = fmtDay(parisToday());
+  if (d.mode === 'demo') box.append(el('div', { class: 'banner', text: 'Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d\'après cet écran.' }));
+  box.append(el('p', { class: 'summary', text: 'Choisis un résultat pour l\'ajouter à ton ticket, seul ou avec d\'autres en combiné. Les matchs repérés « Proposé par Tessbet » sont ceux que l\'analyse a retenus ; tous les autres sont des paris à ton initiative.' }));
+  const pills = el('div', { class: 'pills', role: 'group', 'aria-label': 'Sport' },
+    [['all', 'Tous'], ['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis']].filter(([k]) => k === 'all' || count(k))
+      .map(([k, t]) => el('button', { class: 'pill' + (s.filter === k ? ' on' : ''), type: 'button', 'aria-pressed': String(s.filter === k), text: `${t} ${count(k)}`,
+        onclick: () => { s.filter = k; renderMatchList(); } })));
+  box.append(el('div', { class: 'mtools' }, pills, refreshBlock(d)));
+  box.append(el('p', { class: 'mstamp', text: d.updated_at && d.mode === 'live' ? `Cotes relevées ${ago(d.updated_at)}. Elles bougent : corrige-les dans le ticket avec celles de ton site.` : d.mode === 'live' ? 'Aucune cote en mémoire.' : '' }));
+  const rows = all.filter(m => s.filter === 'all' || m.sport === s.filter);
+  if (!rows.length) {
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucun match à afficher' }),
+      el('p', { text: d.mode === 'live' ? 'Il n\'y a pas de cotes en mémoire pour aujourd\'hui et demain. Mets à jour les cotes ci-dessus, ou ajoute ton match à la main dans le ticket.' : 'Aucun match dans cette catégorie.' })));
+    return;
+  }
+  const today = parisToday();
+  [...new Set(rows.map(m => m.date))].forEach(day => {
+    box.append(el('h2', { class: 'mday' }, day === today ? 'Aujourd\'hui' : 'Demain', el('span', { text: fmtDay(day) })));
+    rows.filter(m => m.date === day).forEach(m => box.append(matchCard(m)));
+  });
+}
+
+/* Ajout à la main : un match qui n'est pas dans la liste. */
+function buildManual() {
+  const sport = el('select', { 'aria-label': 'Sport' }, [['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis']].map(([v, t]) => el('option', { value: v, text: t })));
+  const t1 = el('input', { type: 'text', placeholder: 'Équipe 1 (ex. Paris SG)', 'aria-label': 'Équipe ou joueur 1', maxlength: '60', autocomplete: 'off' });
+  const t2 = el('input', { type: 'text', placeholder: 'Équipe 2 (ex. Lyon)', 'aria-label': 'Équipe ou joueur 2', maxlength: '60', autocomplete: 'off' });
+  const pick = el('select', { 'aria-label': 'Ton pari' });
+  const other = el('input', { type: 'text', placeholder: 'Ton pari (ex. Plus de 2,5 buts)', 'aria-label': 'Ton pari', maxlength: '80', autocomplete: 'off', hidden: true });
+  const cote = el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Cote (ex. 1,85)', 'aria-label': 'Cote' });
+  const fill = () => {
+    const keep = pick.value || 'home';
+    pick.replaceChildren(...[
+      el('option', { value: 'home', text: 'Victoire de ' + (t1.value.trim() || 'l\'équipe 1') }),
+      sport.value === 'football' ? el('option', { value: 'draw', text: 'Match nul' }) : null,
+      el('option', { value: 'away', text: 'Victoire de ' + (t2.value.trim() || 'l\'équipe 2') }),
+      el('option', { value: 'other', text: 'Autre pari…' })].filter(Boolean));
+    pick.value = [...pick.options].some(o => o.value === keep) ? keep : 'home';
+    other.hidden = pick.value !== 'other';
+  };
+  [t1, t2].forEach(i => i.addEventListener('input', fill));
+  sport.addEventListener('change', fill); pick.addEventListener('change', fill);
+  fill();
+  const add = () => {
+    const a = t1.value.trim(), b = t2.value.trim(), c = num(cote.value);
+    if (!a || !b) return toast('Indique les deux équipes (ou joueurs).', true);
+    if (!(c > 1)) return toast('Indique la cote (supérieure à 1).', true);
+    let label, team;
+    if (pick.value === 'home') { label = 'Victoire de ' + a; team = a; }
+    else if (pick.value === 'away') { label = 'Victoire de ' + b; team = b; }
+    else if (pick.value === 'draw') label = 'Match nul';
+    else { label = other.value.trim(); if (!label) return toast('Écris ton pari.', true); }
+    const s = state.slip;
+    s.legs.push({ key: 'm' + Date.now(), match: `${a} – ${b}`, pick: label, pick_team: team, odds: round2(c), sport: sport.value, manual: true });
+    s.total = null;
+    [t1, t2, cote, other].forEach(i => { i.value = ''; });
+    fill(); renderBet();
+    toast(`Ajouté au ticket (${s.legs.length}).`);
+  };
+  return el('details', { class: 'manual' }, el('summary', { text: 'Ajouter un match à la main' }),
+    el('div', { class: 'mf' }, sport, cote, t1, t2, el('div', { class: 'wide' }, pick), other,
+      el('button', { class: 'btn small wide', type: 'button', text: 'Ajouter au ticket', onclick: add })));
+}
+
+function legRow(l) {
+  const inp = el('input', { type: 'text', value: odds(l.odds), inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Cote : ' + l.pick });
+  inp.addEventListener('change', () => {
+    const v = num(inp.value);
+    if (v > 1) { l.odds = round2(v); state.slip.total = null; renderSlip(); renderSlipbar(); } else inp.value = odds(l.odds);
+  });
+  return el('li', {},
+    el('div', { class: 'lg' }, el('b', { text: l.pick }), el('small', { text: l.match + (l.time ? ' · ' + l.time : '') })),
+    inp,
+    el('button', { class: 'x', type: 'button', 'aria-label': 'Retirer : ' + l.pick, text: '×',
+      onclick: () => { state.slip.legs = state.slip.legs.filter(x => x !== l); state.slip.total = null; renderBet(); } }));
+}
+
+function payBlock() {
+  const s = state.slip, n = s.legs.length, combo = isCombo(s);
+  const books = state.stats ? state.stats.books : [];
+  const site = el('select', { 'aria-label': 'Site où tu as parié' }, el('option', { value: '', text: 'Choisis le site' }), books.map(b => el('option', { value: b.key, text: b.name })));
+  site.value = s.book;
+  site.addEventListener('change', () => {
+    s.book = site.value;
+    s.legs.forEach(l => { if (l.offers) l.odds = oddsAt(l, s.book); });   // les cotes du site choisi, quand on les connaît
+    s.total = null; renderSlip(); renderSlipbar();
+  });
+  const stake = el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Mise €', 'aria-label': 'Mise en euros', value: s.stake });
+  const gain = el('b'), note = el('p', { class: 'note2' });
+  const totIn = el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', class: 'totin', 'aria-label': 'Cote totale du combiné', value: odds(comboOdds(s)) });
+  const calc = el('button', { class: 'linkbtn', type: 'button', text: 'Recalculer', onclick: () => { s.total = null; renderSlip(); renderSlipbar(); } });
+  const refresh = () => {
+    const st = num(s.stake) > 0 ? num(s.stake) : 0;
+    const tot = combo ? comboOdds(s) : null;
+    const out = combo ? st * (tot - 1) : s.legs.reduce((sum, l) => sum + st * (l.odds - 1), 0);
+    const staked = combo ? st : st * n;
+    gain.textContent = st ? eur(out) : '–';
+    calc.hidden = !combo || s.total == null;
+    const left = state.stats ? state.stats.daily_left : null;
+    note.className = 'note2' + (left != null && staked > left + 1e-9 ? ' over' : '');
+    note.textContent = left == null ? '' : staked > left + 1e-9 ? `Tu dépasses ta limite du jour (il te reste ${eur(left)}).` : `Il te reste ${eur(left)} sur ta limite du jour.`;
+  };
+  stake.addEventListener('input', () => { s.stake = stake.value; refresh(); });
+  totIn.addEventListener('input', () => { const v = num(totIn.value); s.total = v > 1 ? round2(v) : null; refresh(); });
+  const left = combo
+    ? el('div', {}, el('small', { text: 'Cote totale' }), totIn, el('div', {}, calc))
+    : el('div', {}, el('small', { text: n > 1 ? 'Même mise sur chaque pari' : 'Cote' }), n > 1 ? el('b', { text: plural(n, 'pari', 'paris') }) : el('b', { text: odds(s.legs[0].odds) }));
+  refresh();
+  return el('div', {},
+    el('div', { class: 'perf', 'aria-hidden': 'true' }),
+    el('div', { class: 'pay' }, el('div', {}, el('label', { text: 'Site' }), site), el('div', {}, el('label', { text: combo ? 'Mise' : n > 1 ? 'Mise par pari' : 'Mise' }), stake)),
+    el('div', { class: 'stubbox' }, left, el('div', { class: 'r' }, el('small', { text: 'Gain possible' }), gain)),
+    note,
+    combo ? el('p', { class: 'note2', text: 'Un combiné est perdu dès qu\'un seul match est perdu. Si un match est annulé, il est retiré de la cote.' }) : null,
+    el('button', { class: 'btn save', type: 'button', text: combo ? 'J\'ai parié ce combiné' : n > 1 ? 'J\'ai parié ces paris' : 'J\'ai parié', onclick: () => saveSlip(false) }));
+}
+
+function renderSlip() {
+  const s = state.slip, box = document.getElementById('slip'), n = s.legs.length;
+  if (!s.manualEl) s.manualEl = buildManual();
+  box.replaceChildren(el('h2', {}, 'Mon ticket', n ? el('small', { text: plural(n, 'pari', 'paris') }) : null));
+  if (!n) box.append(el('p', { class: 'hint', text: 'Vide pour l\'instant. Choisis un résultat dans la liste, ou ajoute un match à la main.' }));
+  else {
+    box.append(el('ul', { class: 'sl' }, s.legs.map(legRow)));
+    if (n > 1) box.append(el('div', { class: 'pills', role: 'group', 'aria-label': 'Type de pari' },
+      [['combo', 'Combiné'], ['single', 'Paris simples']].map(([k, t]) => el('button', { class: 'pill' + (s.mode === k ? ' on' : ''), type: 'button', 'aria-pressed': String(s.mode === k), text: t,
+        onclick: () => { s.mode = k; renderSlip(); renderSlipbar(); } }))));
+  }
+  box.append(s.manualEl);
+  if (n) box.append(payBlock());
+}
+
+function renderSlipbar() {
+  const s = state.slip, bar = document.getElementById('slipbar'), on = !document.getElementById('tab-bet').hidden && s.legs.length > 0;
+  bar.hidden = !on; document.body.classList.toggle('has-bar', on);
+  if (on) document.getElementById('slipbar-txt').textContent = `Mon ticket · ${plural(s.legs.length, 'pari', 'paris')}` + (isCombo(s) ? ` · cote ${odds(comboOdds(s))}` : '');
+}
+document.getElementById('slipbar-go').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+function renderBet() { renderMatchList(); renderSlip(); renderSlipbar(); }
+
+async function saveSlip(force) {
+  const s = state.slip;
+  if (!s.legs.length) return toast('Ajoute au moins un match au ticket.', true);
+  if (!s.book) return toast('Choisis chez quel site tu as parié.', true);
+  const stake = num(s.stake);
+  if (!(stake > 0)) return toast('Indique ta mise.', true);
+  const leg = l => ({ match: l.match, pick: l.pick, odds: l.odds, sport: l.sport, league_key: l.league_key, pick_team: l.pick_team, kickoff: l.kickoff });
+  const combo = isCombo(s);
+  try {
+    if (combo) await api('bets', 'POST', { legs: s.legs.map(leg), odds: comboOdds(s), stake, book: s.book, force });
+    else for (const l of [...s.legs]) { await api('bets', 'POST', { ...leg(l), stake, book: s.book, force }); s.legs = s.legs.filter(x => x !== l); }
+  } catch (e) {
+    if (e.status === 409) { if (confirm(e.message + '\n\nEnregistrer quand même ?')) return saveSlip(true); return; }
+    renderBet(); toast(e.message, true); return;
+  }
+  const n = s.legs.length;
+  s.legs = []; s.total = null; s.stake = '';
+  toast(combo ? `Combiné de ${n} matchs enregistré dans « Mes mises ».` : 'Pari enregistré dans « Mes mises ».');
+  await showTab('track');
 }
 
 /* ---------------- Réglages ---------------- */
@@ -933,13 +1316,15 @@ function watchWaiting() {
 async function showTab(t) {
   document.querySelectorAll('.topbar nav button').forEach(x => x.toggleAttribute('aria-current', x.dataset.tab === t));
   document.querySelectorAll('.topbar nav button[aria-current]').forEach(x => x.setAttribute('aria-current', 'page'));
-  ['today', 'live', 'past', 'track', 'settings'].forEach(n => document.getElementById('tab-' + n).hidden = n !== t);
+  ['today', 'bet', 'live', 'past', 'track', 'settings'].forEach(n => document.getElementById('tab-' + n).hidden = n !== t);
   clearInterval(liveTimer); liveTimer = null;
+  renderSlipbar();
   try {
     if (t === 'past') renderPast((await api('history')).days);
     if (t === 'track') { await Promise.all([loadStats(), loadBets()]); renderTrack(); }
     if (t === 'settings') { await Promise.all([loadStats(), loadToday(), loadSettings()]); renderSettings(state.settings); }
     if (t === 'today') { await Promise.all([loadToday(), loadBets(), loadSettings()]); renderToday(); watchWaiting(); }
+    if (t === 'bet') { await Promise.all([loadStats(), loadMatches(), loadSettings()]); renderBet(); }
     if (t === 'live') { await renderLive(); liveTimer = setInterval(renderLive, 20000); }
   } catch (e) { toast(e.message, true); }
   window.scrollTo(0, 0);

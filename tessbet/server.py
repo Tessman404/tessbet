@@ -6,6 +6,7 @@ Python standard uniquement.
 """
 import datetime as dt
 import json
+import math
 import os
 import subprocess
 import sys
@@ -56,9 +57,25 @@ def load_bets():
     return d
 
 
+def eff_odds(b):
+    """Cote réellement payée : dans un combiné, un match annulé compte pour 1 (le site recalcule la cote sans lui)."""
+    void = [l["odds"] for l in b.get("legs") or [] if l.get("result") == "void"]
+    return max(1.0, round(b["odds"] / math.prod(void), 2)) if void else b["odds"]
+
+
+def combo_result(legs):
+    """Résultat d'un combiné d'après ses matchs : perdu dès qu'un match est perdu, gagné quand tous sont validés."""
+    rs = [l.get("result", "pending") for l in legs]
+    if "lose" in rs:
+        return "lose"
+    if "pending" in rs:
+        return "pending"
+    return "void" if all(r == "void" for r in rs) else "win"
+
+
 def bet_profit(b):
     if b["result"] == "win":
-        return round(b["stake"] * (b["odds"] - 1), 2)
+        return round(b["stake"] * (eff_odds(b) - 1), 2)
     if b["result"] == "lose":
         return -b["stake"]
     return 0.0
@@ -71,7 +88,7 @@ BOOK_NAMES = {"winamax": "Winamax", "unibet": "Unibet", "betclic": "Betclic", "p
 def returned(b, result=None):
     """Argent rendu par le site pour ce pari selon son résultat (la mise est retirée du compte au moment du pari)."""
     r = result or b["result"]
-    return b["stake"] * b["odds"] if r == "win" else b["stake"] if r == "void" else 0.0
+    return b["stake"] * eff_odds(b) if r == "win" else b["stake"] if r == "void" else 0.0
 
 
 def get_cap_setting():
@@ -123,12 +140,57 @@ def compute_stats(d):
     }
 
 
-def add_bet(body):
+def clean_leg(raw):
+    """Un match d'un combiné (ou d'un pari simple), nettoyé ; None s'il est inutilisable."""
+    if not isinstance(raw, dict):
+        return None
+    match, pick = str(raw.get("match", "")).strip()[:120], str(raw.get("pick", "")).strip()[:120]
     try:
-        odds, stake = float(body.get("odds")), float(body.get("stake"))
+        odds = float(raw.get("odds"))
     except (TypeError, ValueError):
-        return 400, {"error": "Cote ou mise invalide."}
-    match, pick = str(body.get("match", ""))[:120], str(body.get("pick", ""))[:120]
+        return None
+    if not match or not pick or not 1 < odds < 1000:
+        return None
+    leg = {"match": match, "pick": pick, "odds": round(odds, 2), "result": "pending"}
+    if raw.get("sport"):
+        leg["sport"] = str(raw["sport"])[:20]
+    for k in ("league_key", "pick_team", "kickoff"):
+        if raw.get(k):
+            leg[k] = str(raw[k])[:80]
+    return leg
+
+
+MAX_LEGS = 12
+
+
+def add_bet(body):
+    """Enregistre un pari simple, ou un combiné si « legs » est donné (2 à 12 matchs, une seule cote et une seule mise)."""
+    try:
+        stake = float(body.get("stake"))
+    except (TypeError, ValueError):
+        return 400, {"error": "Mise invalide."}
+    extra = {}
+    if body.get("legs") is not None:
+        legs = [clean_leg(x) for x in body["legs"]] if isinstance(body["legs"], list) else []
+        if not 2 <= len(legs) <= MAX_LEGS or any(l is None for l in legs):
+            return 400, {"error": f"Un combiné compte de 2 à {MAX_LEGS} matchs, chacun avec son match, son pari et sa cote."}
+        product = round(math.prod(l["odds"] for l in legs), 2)
+        try:
+            odds = float(body.get("odds") or product)  # la cote du site peut différer légèrement du produit
+        except (TypeError, ValueError):
+            return 400, {"error": "Cote du combiné invalide."}
+        match, pick = f"Combiné ({len(legs)} matchs)", " + ".join(l["pick"] for l in legs)[:120]
+        extra = {"legs": legs, "sport": "combine"}
+    else:
+        try:
+            odds = float(body.get("odds"))
+        except (TypeError, ValueError):
+            return 400, {"error": "Cote ou mise invalide."}
+        match, pick = str(body.get("match", ""))[:120], str(body.get("pick", ""))[:120]
+        extra = {"sport": str(body.get("sport", ""))[:20]}
+        for k in ("league_key", "pick_team", "kickoff"):
+            if body.get(k):
+                extra[k] = str(body[k])[:80]
     if not match or not pick or odds <= 1 or stake <= 0:
         return 400, {"error": "Il manque une information (match, pari, cote ou mise)."}
     book = str(body.get("book", "")).strip().lower()
@@ -143,10 +205,7 @@ def add_bet(body):
                                   "Tu l'as fixée pour te protéger.", "needs_force": True}
         bet = {"id": uuid.uuid4().hex[:8], "created": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
                "date": today_paris(), "match": match, "pick": pick, "odds": round(odds, 2),
-               "stake": round(stake, 2), "sport": str(body.get("sport", ""))[:20], "result": "pending"}
-        for k in ("league_key", "pick_team", "kickoff"):
-            if body.get(k):
-                bet[k] = str(body[k])[:80]
+               "stake": round(stake, 2), "result": "pending", **extra}
         if book:
             bet["book"] = book
         d["bets"].append(bet)
@@ -162,8 +221,30 @@ def set_result(bet_id, result):
         for b in d["bets"]:
             if b["id"] == bet_id:
                 b["result"] = result
+                for leg in b.get("legs") or []:  # résultat global d'un combiné : les matchs pas encore tranchés suivent
+                    if result == "pending" or (leg.get("result", "pending") == "pending" and result in ("win", "void")):
+                        leg["result"] = result
                 engine.write_json(BETS_PATH, d)
                 return 200, {"bet": b}
+    return 404, {"error": "Pari introuvable."}
+
+
+def set_leg_result(bet_id, idx, result):
+    """Résultat d'un seul match d'un combiné ; le résultat du combiné s'en déduit."""
+    if result not in ("win", "lose", "void", "pending"):
+        return 400, {"error": "Résultat inconnu."}
+    with LOCK:
+        d = load_bets()
+        for b in d["bets"]:
+            if b["id"] != bet_id:
+                continue
+            legs = b.get("legs") or []
+            if not 0 <= idx < len(legs):
+                return 404, {"error": "Match introuvable dans ce combiné."}
+            legs[idx]["result"] = result
+            b["result"] = combo_result(legs)
+            engine.write_json(BETS_PATH, d)
+            return 200, {"bet": b}
     return 404, {"error": "Pari introuvable."}
 
 
@@ -319,6 +400,77 @@ def get_history(limit=60):
     return {"days": days}
 
 
+def bets_payload():
+    """Les paris avec leur état en direct ; un combiné porte l'état de chacun de ses matchs."""
+    lvs = read_json(os.path.join(DATA, "live.json"), {})
+    out = []
+    for b in reversed(load_bets()["bets"]):
+        if b.get("legs"):
+            legs = []
+            for i, leg in enumerate(b["legs"]):
+                lv = lvs.get(f"{b['id']}:{i}", {}).get("live")
+                one = dict(leg, live=lv)
+                one["status"] = live.bet_status({"match": leg["match"], "pick": leg["pick"], "pick_team": leg.get("pick_team")}, lv)
+                legs.append(one)
+            out.append(dict(b, legs=legs, status=live.combo_status(legs), eff_odds=eff_odds(b)))
+        else:
+            lv = lvs.get(b["id"], {}).get("live")
+            out.append(dict(b, live=lv, status=live.bet_status(b, lv), eff_odds=eff_odds(b)))
+    return out
+
+
+def official_picks():
+    """Les paris proposés par Tessbet pour aujourd'hui et demain : (match, issue) -> vrai."""
+    out = set()
+    for day in ("today", "tomorrow"):
+        d = read_result(day_date(day)) or {}
+        for sel in d.get("selections", []):
+            out.add((sel.get("match"), sel.get("pick_label")))
+    return out
+
+
+def refresh_cost(cfg):
+    """Crédits d'API qu'une mise à jour des cotes devrait coûter : un par championnat déjà relevé."""
+    tag = engine._odds_tag(cfg)
+    n = len([f for f in os.listdir(DATA) if f.startswith("cache_") and f.endswith(f"_{tag}.json")]) if os.path.isdir(DATA) else 0
+    return n or 7
+
+
+def matches_payload():
+    """Tous les matchs d'aujourd'hui et de demain avec leurs cotes, tirés de la mémoire (sans crédit)."""
+    cfg, now = engine.load_config(), now_utc()
+    if cfg.get("mode") == "demo":
+        events = engine.demo_events(now) + engine.demo_events(now, engine.paris_date(now) + dt.timedelta(days=1))
+        newest = now.timestamp()
+    else:
+        events, newest = engine.cached_events(cfg)
+    rows = engine.match_list(events, cfg, now)
+    official = official_picks()
+    for r in rows:
+        for o in r["outcomes"]:
+            o["official"] = (f"{r['home']} – {r['away']}", o["label"]) in official
+    leagues = len({r["league_key"] or r["league"] for r in rows})
+    return {"matches": rows, "mode": cfg.get("mode"), "updated_at": dt.datetime.fromtimestamp(newest, dt.timezone.utc).isoformat() if newest else None,
+            "refresh_cost": refresh_cost(cfg) if cfg.get("mode") == "live" else 0, "leagues": leagues}
+
+
+def refresh_matches(body):
+    """Met à jour les cotes de tous les matchs (utilise des crédits de l'API de cotes : demande une confirmation)."""
+    cfg = engine.load_config()
+    if cfg.get("mode") != "live":
+        return 400, {"error": "Le mode démo n'utilise pas de vraies cotes."}
+    if not body.get("confirm"):
+        return 400, {"error": "La mise à jour des cotes coûte des crédits : confirmation nécessaire."}
+    warnings = []
+    try:
+        _, quota = engine.fetch_live_events(cfg, engine.load_env(), now_utc(), warnings, force=True)
+    except Exception as e:
+        return 400, {"error": "Mise à jour impossible : " + str(e)[:120] + "."}
+    out = matches_payload()
+    out.update(quota=quota, warnings=warnings)
+    return 200, out
+
+
 def ha_payload():
     d = get_today()
     picks = [f"{s['match']} : {s['pick_label']} @ {s['odds']:.2f}".replace(".", ",") + f" ({round(s['prob'] * 100)} %)"
@@ -409,10 +561,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/stats":
                 return self._send(200, compute_stats(load_bets()))
             if path == "/api/bets":
-                lvs = read_json(os.path.join(DATA, "live.json"), {})
-                bets = [dict(b, live=lvs.get(b["id"], {}).get("live"), status=live.bet_status(b, lvs.get(b["id"], {}).get("live")))
-                        for b in reversed(load_bets()["bets"])]
-                return self._send(200, {"bets": bets})
+                return self._send(200, {"bets": bets_payload()})
+            if path == "/api/matches":
+                return self._send(200, matches_payload())
             if path == "/api/settings":
                 return self._send(200, get_settings())
             if path == "/api/bookmakers":  # diagnostic : quels bookmakers l'API renvoie vraiment
@@ -439,6 +590,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400 if "error" in res else 200, res)  # pas de 5xx : les proxys remplacent le message
             if path == "/api/bets":
                 return self._send(*add_bet(body))
+            if path == "/api/matches/refresh":
+                return self._send(*refresh_matches(body))
             if path == "/api/settings":
                 return self._send(*set_settings(body))
             if path == "/api/routine/test":
@@ -453,6 +606,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
             if path == "/api/bankroll":
                 return self._send(*set_bankroll(body))
+            if path.startswith("/api/bets/") and path.count("/") == 5 and path.split("/")[4] == "legs" and path.split("/")[5].isdigit():
+                return self._send(*set_leg_result(path.split("/")[3], int(path.split("/")[5]), body.get("result")))
             if path.startswith("/api/bets/") and path.count("/") == 3:
                 return self._send(*update_bet(path.split("/")[3], body))
             if path.startswith("/api/bets/") and path.endswith("/result"):

@@ -139,6 +139,46 @@ def final_result(side, score):
     return "win" if mine > other else "lose"
 
 
+def tracked(bets):
+    """Ce qu'il faut suivre : chaque pari simple en cours, et chaque match encore ouvert d'un combiné (identifiant « pari:n°»)."""
+    out = []
+    for b in bets:
+        if b.get("result") != "pending":
+            continue
+        if not b.get("legs"):
+            out.append(b)
+            continue
+        for i, leg in enumerate(b["legs"]):
+            if leg.get("result", "pending") != "pending":
+                continue
+            out.append({"id": f"{b['id']}:{i}", "date": (leg.get("kickoff") or b.get("date") or "")[:10], "match": leg["match"],
+                        "pick": leg["pick"], "pick_team": leg.get("pick_team"), "sport": leg.get("sport") or "football",
+                        "league_key": leg.get("league_key"), "result": "pending", "shown": f"{leg['pick']} (combiné)"})
+    return out
+
+
+def combo_status(legs):
+    """Où en est un combiné, d'après le résultat ou l'état en direct de chacun de ses matchs."""
+    codes = []
+    for leg in legs:
+        r = leg.get("result", "pending")
+        codes.append({"win": "won", "lose": "lost", "void": "void"}.get(r) or (leg.get("status") or {}).get("code"))
+    if "lost" in codes:
+        return {"code": "lost", "text": "Combiné perdu"}
+    if "won" in codes and all(c in ("won", "void") for c in codes):
+        return {"code": "won", "text": "Combiné gagné"}
+    if "losing" in codes:
+        return {"code": "losing", "text": "Un match est mal parti"}
+    if "draw" in codes:
+        return {"code": "draw", "text": "Un match est à égalité"}
+    won = codes.count("won")
+    if "winning" in codes:
+        return {"code": "winning", "text": "Les matchs en cours vont dans ton sens"}
+    if won:
+        return {"code": "winning", "text": f"{won} match{'s' if won > 1 else ''} gagné{'s' if won > 1 else ''} sur {len(legs)}"}
+    return None
+
+
 def bet_status(bet, lv):
     """Où en est mon pari : gagne / perd / égalité en cours, ou gagné / perdu si le match est fini."""
     if not lv:
@@ -170,7 +210,7 @@ def bet_status(bet, lv):
 def messages(bet, home, away, cur, st, sport, first):
     """Liste de (clé, titre, message) à envoyer d'après l'évolution du match."""
     side = pick_side(bet, home, away)
-    pick = bet.get("pick", "")
+    pick = bet.get("shown") or bet.get("pick", "")
     sc = cur["score"]
     line = f"{home} {sc[0]}-{sc[1]} {away}"
     out = []
@@ -197,7 +237,7 @@ def tick(now=None):
     changed = False
     cache = {}
     today = dt.datetime.now(dt.timezone.utc).date()
-    for bet in bets:
+    for bet in tracked(bets):
         if bet.get("result") != "pending" or bet.get("sport") not in SPORT_SLUGS:
             continue
         try:

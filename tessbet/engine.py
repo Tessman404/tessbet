@@ -756,7 +756,57 @@ def convert_event(e, key, title):
             "commence": e["commence_time"], "home": e["home_team"], "away": e["away_team"], "bookmakers": books}
 
 
-def fetch_live_events(cfg, env, now, warnings):
+def _odds_tag(cfg):
+    books = cfg.get("bookmakers") or []
+    return hashlib.md5((",".join(books or [cfg["regions"]]) + "|links|48h").encode()).hexdigest()[:6]
+
+
+def cached_events(cfg):
+    """Matchs et cotes déjà en mémoire (aucun crédit utilisé) + date du relevé le plus récent (timestamp)."""
+    tag, events, newest = _odds_tag(cfg), [], 0.0
+    suffix = f"_{tag}.json"
+    for name in sorted(os.listdir(DATA)) if os.path.isdir(DATA) else []:
+        if not (name.startswith("cache_") and name.endswith(suffix)):
+            continue
+        path = os.path.join(DATA, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = json.load(f)
+        except (OSError, ValueError):
+            continue
+        key = name[len("cache_"):-len(suffix)]
+        newest = max(newest, os.path.getmtime(path))
+        events += [convert_event(e, key, e.get("sport_title") or key) for e in raw if isinstance(e, dict) and e.get("id")]
+    return events, newest
+
+
+def match_list(events, cfg, now):
+    """Tous les matchs d'aujourd'hui et de demain pas encore commencés, avec les cotes de chaque issue (pour parier librement)."""
+    cfg = dict(cfg, selection=dict(cfg["selection"], exclude_draw=False))
+    today = paris_date(now)
+    days = {today, today + dt.timedelta(days=1)}
+    rows = []
+    for ev in events:
+        start = parse_iso(ev["commence"])
+        if start <= now or to_paris(start).date() not in days:
+            continue
+        by = {c["pick"]: c for c in analyse_event(ev, cfg)}
+        order = [ev["home"], "Draw", ev["away"]] if ev["sport"] == "football" else [ev["home"], ev["away"]]
+        outs = [{"name": n, "label": "Match nul" if n == "Draw" else f"Victoire de {n}", "prob": round(by[n]["prob"], 3),
+                 "odds": round(by[n]["odds"], 2), "bookmaker": by[n]["bookmaker"],
+                 "offers": [{"key": o["key"], "book": o["book"], "odds": o["odds"]} for o in by[n]["offers"]]}
+                for n in order if n in by]
+        if len(outs) < 2:
+            continue
+        rows.append({"id": ev["id"], "sport": ev["sport"], "league": ev["league"], "league_key": ev.get("league_key", ""),
+                     "commence": ev["commence"], "date": to_paris(start).date().isoformat(),
+                     "kickoff_local": to_paris(start).strftime("%H:%M"), "home": ev["home"], "away": ev["away"],
+                     "n_books": by[order[0]]["n_books"] if order[0] in by else 0, "outcomes": outs})
+    rows.sort(key=lambda r: (r["commence"], r["id"]))
+    return rows
+
+
+def fetch_live_events(cfg, env, now, warnings, force=False):
     key = env.get("ODDS_API_KEY")
     if not key:
         raise RuntimeError("Clé ODDS_API_KEY manquante dans le fichier .env")
@@ -772,11 +822,11 @@ def fetch_live_events(cfg, env, now, warnings):
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     events, quota = [], None
     books = cfg.get("bookmakers") or []
-    tag = hashlib.md5((",".join(books or [cfg["regions"]]) + "|links|48h").encode()).hexdigest()[:6]
+    tag = _odds_tag(cfg)
     for k in keys:
         cache_path = os.path.join(DATA, f"cache_{k}_{tag}.json")
         raw = None
-        if os.path.exists(cache_path):
+        if os.path.exists(cache_path) and not force:
             age = now.timestamp() - os.path.getmtime(cache_path)
             if age < cfg["cache_hours"] * 3600:
                 with open(cache_path, encoding="utf-8") as f:
