@@ -287,9 +287,15 @@ Règles strictes :
 - Aucun pari n'est certain : ne promets jamais de gain et n'écris pas "sûr" ni "garanti".
 - Écris en français simple, sans jargon, phrases courtes.
 
+Pour chaque pari, rédige aussi une VRAIE ANALYSE ÉCRITE dans le champ "analyse" : 4 à 6 paragraphes courts séparés
+par une ligne vide, avec ces thèmes dans l'ordre : 1) le contexte du match et l'enjeu, 2) la forme récente des deux
+camps, 3) absents, suspendus, composition probable, 4) historique ou style de jeu s'il compte vraiment,
+5) pourquoi la cote paraît cohérente (ou non) avec ce que tu as trouvé, 6) les risques précis et ton avis final
+prudent. Appuie-toi uniquement sur des faits trouvés ; dis clairement ce que tu n'as pas pu vérifier.
+
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, de cette forme :
 {{"verdicts": [{{"id": "<l'id exact>", "verdict": "confirme|prudence|ecarte",
-  "resume": "1 ou 2 phrases claires", "points": ["fait vérifié 1", "fait vérifié 2"], "sources": ["https://..."]}}]}}"""
+  "resume": "1 ou 2 phrases claires", "analyse": "paragraphes séparés par une ligne vide", "points": ["fait vérifié 1", "fait vérifié 2"], "sources": ["https://..."]}}]}}"""
 
 
 def _collect_urls(content, seen):
@@ -314,6 +320,7 @@ def parse_review(text, pool, seen_urls):
         points = [str(p)[:220] for p in (v.get("points") or []) if p][:4]
         sources = [u for u in (v.get("sources") or []) if isinstance(u, str) and u.startswith("http") and u in seen_urls][:3]
         out[v["id"]] = {"verdict": v["verdict"], "resume": str(v.get("resume", ""))[:420],
+                        "analyse": str(v.get("analyse", "")).strip()[:4500],
                         "points": points, "sources": sources}
     return out
 
@@ -329,7 +336,7 @@ def claude_review(pool, cfg, env, today):
     if os.path.exists(cache_path):
         with open(cache_path, encoding="utf-8") as f:
             cache = json.load(f)
-    todo = [c for c in pool if review_key(c) not in cache]
+    todo = [c for c in pool if not cache.get(review_key(c), {}).get("analyse")]
     if todo:
         messages = [{"role": "user", "content": build_review_prompt(todo, today)}]
         payload = {"model": cl["model"], "max_tokens": cl["max_tokens"], "messages": messages,
@@ -363,7 +370,9 @@ def demo_review(pool):
     out = {}
     for c in pool:
         v, resume, pts = canned.get(c["pick"], ("confirme", "Rien d'inquiétant trouvé (exemple fictif).", []))
-        out[review_key(c)] = {"verdict": v, "resume": resume, "points": pts, "sources": [], "demo": True}
+        out[review_key(c)] = {"verdict": v, "resume": resume, "points": pts, "sources": [], "demo": True,
+                              "analyse": resume + "\n\nCeci est un exemple fictif : en mode réel, Claude rédige ici une analyse "
+                                                  "complète (contexte, forme, absents, risques) à partir de recherches sur le web."}
     return out
 
 
@@ -654,11 +663,31 @@ def run(mode=None):
     write_json(os.path.join(DATA, "selections.json"), result)
     if mode != "demo":  # on garde chaque jour pour pouvoir revoir les paris donnés
         write_json(os.path.join(DATA, "history", f"{today.isoformat()}.json"), result)
-    try:
-        result["notification"] = notify_phone(result, cfg, env)
-    except Exception as e:  # une notification ratée ne doit jamais bloquer l'analyse
-        result["notification"] = f"notification impossible : {str(e)[:100]}"
+    if os.environ.get("TESSBET_NO_NOTIFY"):
+        result["notification"] = "pas encore envoyée"
+    else:
+        try:
+            result["notification"] = notify_phone(result, cfg, env)
+        except Exception as e:  # une notification ratée ne doit jamais bloquer l'analyse
+            result["notification"] = f"notification impossible : {str(e)[:100]}"
+    write_json(os.path.join(DATA, "selections.json"), result)
     return result
+
+
+def notify_current(force=False):
+    """Envoie sur le téléphone l'analyse du jour déjà faite. Retourne un court statut."""
+    path = os.path.join(DATA, "selections.json")
+    if not os.path.exists(path):
+        return "notification impossible : pas encore d'analyse"
+    with open(path, encoding="utf-8") as f:
+        d = json.load(f)
+    try:
+        status = notify_phone(d, load_config(), load_env(), force=force)
+    except Exception as e:
+        status = f"notification impossible : {str(e)[:100]}"
+    d["notification"] = status
+    write_json(path, d)
+    return status
 
 
 if __name__ == "__main__":
@@ -672,6 +701,9 @@ if __name__ == "__main__":
                 {"title": "Tessbet", "message": "Test réussi : Tessbet est relié à ton téléphone.",
                  "data": {"tag": "tessbet-test"}})
         print("Message de test envoyé.")
+        sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == "notify-now":
+        print(notify_current(force=True))
         sys.exit(0)
     mode_arg = sys.argv[1] if len(sys.argv) > 1 else None
     res = run(mode_arg)

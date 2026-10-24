@@ -163,6 +163,12 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
 [hidden] { display: none !important; }
 @media (max-width: 380px) { .ticket { grid-template-columns: 1fr 96px; } .odds { font-size: 2.3rem; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.autobox { display:flex; align-items:center; gap:10px; margin:0 0 14px; color:#fff; font-size:.95rem; }
+.autobox input { width:22px; height:22px; accent-color:#ffd23f; }
+.analyse { margin:10px 0 4px; padding:12px 14px; background:#fff; border-radius:10px; border:1px solid #d5e0da; }
+.analyse h3 { margin:0 0 8px; font:700 1rem var(--display); }
+.analyse p { margin:0 0 9px; line-height:1.45; font-size:.93rem; color:var(--ink); }
+.analyse p:last-child { margin-bottom:0; }
 </style>
 </head>
 <body>
@@ -179,10 +185,13 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
       <p class="date" id="date"></p>
     </header>
     <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
+    <label class="autobox"><input type="checkbox" id="auto"><span>Analyse automatique chaque matin</span></label>
     <p class="summary" id="summary"></p>
     <div id="tickets"></div>
     <p class="warn" id="warnings"></p>
     <button class="btn refresh" id="refresh" type="button">Actualiser l'analyse</button>
+    <button class="btn refresh" id="notify" type="button">Envoyer sur mon iPhone</button>
+    <p class="note" id="notifstatus"></p>
     <p class="note" id="disclaimer"></p>
   </section>
 
@@ -268,6 +277,9 @@ function ticket(s) {
     });
     details.push(el('li', {}, 'Sources : ', links));
   }
+  const analyse = cl && cl.analyse ? el('div', { class: 'analyse' },
+    el('h3', { text: 'Analyse de Claude' }),
+    cl.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() }))) : null;
   return el('article', { class: 'ticket' },
     el('div', { class: 'body' },
       el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: s.kickoff_local })),
@@ -280,6 +292,7 @@ function ticket(s) {
         el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
         s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
       claudeBox,
+      analyse,
       el('details', {}, el('summary', { text: 'Pourquoi ce pari ?' }), el('ul', {}, details)),
       el('div', { class: 'actions' },
         el('span', { class: 'stake' }, 'Mise conseillée ', el('b', { text: eur(suggested) })),
@@ -317,6 +330,7 @@ function renderToday() {
   }
   document.getElementById('warnings').textContent = (d.warnings || []).length ? 'À noter : ' + d.warnings.slice(0, 3).join(' ; ') : '';
   document.getElementById('disclaimer').textContent = d.disclaimer || '';
+  document.getElementById('notifstatus').textContent = d.notification ? 'iPhone : ' + d.notification : '';
 }
 
 /* ---------------- Mes mises ---------------- */
@@ -392,7 +406,9 @@ function renderPast(days) {
     d.selections.forEach(s => box.append(el('div', { class: 'bet' },
       el('div', { class: 'top' },
         el('div', {}, el('div', { class: 'name', text: s.pick_label }),
-          el('div', { class: 'sub', text: `${s.match} – cote ${odds(s.odds)} – ${pct(s.prob)}` + (s.claude ? ' – Claude : ' + s.claude.verdict : '') }))))));
+          el('div', { class: 'sub', text: `${s.match} – cote ${odds(s.odds)} – ${pct(s.prob)}` + (s.claude ? ' – Claude : ' + s.claude.verdict : '') }))),
+      s.claude && s.claude.analyse ? el('details', {}, el('summary', { text: 'Relire l\'analyse de Claude' }),
+        el('div', { class: 'analyse' }, s.claude.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() })))) : null)));
   });
 }
 
@@ -403,9 +419,20 @@ async function loadBets() { state.bets = (await api('bets')).bets; }
 
 document.getElementById('refresh').addEventListener('click', async e => {
   const b = e.currentTarget; b.disabled = true; b.textContent = 'Analyse en cours…';
-  try { state.today = await api('refresh', 'POST', {}); renderToday(); toast(state.today.throttled ? 'Analyse déjà à jour (moins de 30 min).' : 'Analyse mise à jour.'); }
+  try { state.today = await api('refresh', 'POST', { force: true }); renderToday(); toast(state.today.throttled ? 'Analyse déjà à jour (moins de 30 min).' : 'Analyse mise à jour.'); }
   catch (err) { toast(err.message, true); }
   b.disabled = false; b.textContent = 'Actualiser l\'analyse';
+});
+
+document.getElementById('notify').addEventListener('click', async e => {
+  const b = e.currentTarget; b.disabled = true;
+  try { const r = await api('notify', 'POST', {}); toast(r.status || 'Envoyé.'); state.today = await api('today'); renderToday(); }
+  catch (err) { toast(err.message, true); state.today = await api('today'); renderToday(); }
+  b.disabled = false;
+});
+document.getElementById('auto').addEventListener('change', async e => {
+  try { await api('settings', 'POST', { auto: e.target.checked }); toast(e.target.checked ? 'Analyse automatique activée.' : 'Analyse automatique désactivée : plus d\'analyse ni de notification.'); }
+  catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
 });
 
 document.querySelectorAll('nav button').forEach(btn => btn.addEventListener('click', () => {
@@ -421,7 +448,8 @@ document.querySelectorAll('nav button').forEach(btn => btn.addEventListener('cli
 }));
 
 (async () => {
-  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack(); }
+  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack();
+    try { document.getElementById('auto').checked = (await api('settings')).auto; } catch (_) {} }
   catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
 })();
 </script>

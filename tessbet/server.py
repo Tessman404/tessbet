@@ -156,11 +156,27 @@ def run_analysis(force=False):
         age = now_utc().timestamp() - engine.parse_iso(d["generated_at"]).timestamp()
         if age < 1800 and d.get("date") == today_paris() and d.get("mode") == cfg.get("mode"):
             return dict(d, throttled=True)
-    p = subprocess.run([sys.executable, os.path.join(BASE, "engine.py")], capture_output=True, text=True, timeout=420)
+    p = subprocess.run([sys.executable, os.path.join(BASE, "engine.py")], capture_output=True, text=True, timeout=420,
+                       env=dict(os.environ, TESSBET_NO_NOTIFY="1"))
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ["erreur inconnue"])[-1][:200]
         return {"error": f"L'analyse a échoué : {err}"}
     return get_today()
+
+
+SETTINGS_PATH = os.path.join(DATA, "settings.json")
+
+
+def get_settings():
+    return {"auto": bool(read_json(SETTINGS_PATH, {}).get("auto", True))}
+
+
+def set_settings(body):
+    s = get_settings()
+    if "auto" in body:
+        s["auto"] = bool(body["auto"])
+    engine.write_json(SETTINGS_PATH, s)
+    return 200, s
 
 
 def get_history(limit=60):
@@ -187,10 +203,13 @@ def ha_payload():
 
 def scheduler():
     """Lance l'analyse chaque jour à l'heure choisie (et au démarrage si rien n'existe pour aujourd'hui)."""
-    last_run = None
+    last_run, tries, last_try = None, {}, 0
     while True:
         try:
             cfg = engine.load_config()
+            if not get_settings()["auto"]:
+                time.sleep(60)
+                continue
             d = read_json(SEL_PATH, None)
             today = today_paris()
             hour = engine.to_paris(now_utc()).hour
@@ -199,6 +218,12 @@ def scheduler():
             if stale and ready and last_run != today:
                 last_run = today  # un seul essai par jour : on ne martèle pas les API en cas d'erreur
                 run_analysis(force=True)
+            d = read_json(SEL_PATH, None)
+            if (d and cfg.get("mode") == "live" and d.get("date") == today and tries.get(today, 0) < 6
+                    and (not d.get("notification") or str(d["notification"]).startswith(("notification impossible", "pas encore")))
+                    and time.time() - last_try > 300):
+                last_try, tries[today] = time.time(), tries.get(today, 0) + 1  # HA peut ne pas être prêt au démarrage
+                engine.notify_current()
         except Exception as e:  # le planificateur ne doit jamais s'arrêter
             print("planificateur :", e, file=sys.stderr)
         time.sleep(60)
@@ -241,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, compute_stats(load_bets()))
             if path == "/api/bets":
                 return self._send(200, {"bets": list(reversed(load_bets()["bets"]))})
+            if path == "/api/settings":
+                return self._send(200, get_settings())
             if path == "/api/history":
                 return self._send(200, get_history())
             if path == "/api/ha":
@@ -252,6 +279,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(500 if "error" in res else 200, res)
             if path == "/api/bets":
                 return self._send(*add_bet(body))
+            if path == "/api/settings":
+                return self._send(*set_settings(body))
+            if path == "/api/notify":
+                st = engine.notify_current(force=True)
+                return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
             if path == "/api/bankroll":
                 return self._send(*set_bankroll(body))
             if path.startswith("/api/bets/") and path.endswith("/result"):
