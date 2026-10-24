@@ -338,8 +338,12 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .mday span { font: 400 .95rem var(--text); color: var(--chalk-dim); }
 .mcard { margin: 0 0 10px; padding: 12px 14px; border-radius: 14px; background: var(--turf-2); }
 .mcard .mt { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .85rem; color: var(--chalk-dim); }
-.mcard .mt .tag { margin-left: auto; }
 .mcard .mn { margin: 4px 0 10px; font-size: 1.05rem; font-weight: 600; color: #fff; overflow-wrap: anywhere; }
+.mcard .mt .tag { margin-left: 0; }
+.mcard .mt span:first-child { margin-right: auto; }
+.mcard.started { box-shadow: inset 3px 0 0 #ff5a5f; }
+.mnote { margin: 8px 0 0; font-size: .82rem; color: var(--chalk-dim); }
+.tag.live { border-color: #ff5a5f; color: #ff9a9c; }
 .tag { padding: 1px 9px; border: 1.5px solid var(--yellow); border-radius: 999px; font-size: .76rem; font-weight: 700; color: var(--yellow); white-space: nowrap; }
 .outs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .outs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1023,11 +1027,13 @@ function outcomeBtn(m, o) {
 }
 
 function matchCard(m) {
-  return el('article', { class: 'mcard' },
+  return el('article', { class: 'mcard' + (m.started ? ' started' : '') },
     el('div', { class: 'mt' }, el('span', { text: `${SPORT[m.sport] || ''} ${m.league}` }),
+      m.started ? el('span', { class: 'tag live', text: 'Déjà commencé' }) : null,
       m.outcomes.some(o => o.official) ? el('span', { class: 'tag', text: 'Proposé par Tessbet' }) : null, el('span', { text: m.kickoff_local })),
     el('h3', { class: 'mn', text: `${m.home} – ${m.away}` }),
-    el('div', { class: 'outs' + (m.outcomes.length === 2 ? ' two' : '') }, m.outcomes.map(o => outcomeBtn(m, o))));
+    el('div', { class: 'outs' + (m.outcomes.length === 2 ? ' two' : '') }, m.outcomes.map(o => outcomeBtn(m, o))),
+    m.started ? el('p', { class: 'mnote', text: 'Les cotes sont celles d\'avant le match : corrige-les dans le ticket avec celles de ton site.' }) : null);
 }
 
 function refreshBlock(d) {

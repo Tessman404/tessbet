@@ -780,15 +780,21 @@ def cached_events(cfg):
     return events, newest
 
 
+LIVE_WINDOW = dt.timedelta(hours=3)
+
+
 def match_list(events, cfg, now):
-    """Tous les matchs d'aujourd'hui et de demain pas encore commencés, avec les cotes de chaque issue (pour parier librement)."""
+    """Les matchs d'aujourd'hui et de demain, avec les cotes de chaque issue (pour parier librement).
+
+    Un match commencé reste dans la liste 3 heures (on peut enregistrer un pari placé juste avant le coup d'envoi)."""
     cfg = dict(cfg, selection=dict(cfg["selection"], exclude_draw=False))
     today = paris_date(now)
     days = {today, today + dt.timedelta(days=1)}
     rows = []
     for ev in events:
         start = parse_iso(ev["commence"])
-        if start <= now or to_paris(start).date() not in days:
+        started = start <= now
+        if now - start > LIVE_WINDOW or (not started and to_paris(start).date() not in days):
             continue
         by = {c["pick"]: c for c in analyse_event(ev, cfg)}
         order = [ev["home"], "Draw", ev["away"]] if ev["sport"] == "football" else [ev["home"], ev["away"]]
@@ -799,8 +805,8 @@ def match_list(events, cfg, now):
         if len(outs) < 2:
             continue
         rows.append({"id": ev["id"], "sport": ev["sport"], "league": ev["league"], "league_key": ev.get("league_key", ""),
-                     "commence": ev["commence"], "date": to_paris(start).date().isoformat(),
-                     "kickoff_local": to_paris(start).strftime("%H:%M"), "home": ev["home"], "away": ev["away"],
+                     "commence": ev["commence"], "date": (today if started else to_paris(start).date()).isoformat(),
+                     "started": started, "kickoff_local": to_paris(start).strftime("%H:%M"), "home": ev["home"], "away": ev["away"],
                      "n_books": by[order[0]]["n_books"] if order[0] in by else 0, "outcomes": outs})
     rows.sort(key=lambda r: (r["commence"], r["id"]))
     return rows
@@ -833,7 +839,7 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
                     raw = json.load(f)
         if raw is None:
             params = {"apiKey": key, "markets": "h2h", "oddsFormat": "decimal",
-                      "dateFormat": "iso", "commenceTimeFrom": now.strftime(fmt),
+                      "dateFormat": "iso", "commenceTimeFrom": (now - LIVE_WINDOW).strftime(fmt),
                       "commenceTimeTo": end.astimezone(dt.timezone.utc).strftime(fmt)}
             if books:  # 10 bookmakers au plus = 1 seul crédit par appel
                 params["bookmakers"] = ",".join(books)
