@@ -417,7 +417,7 @@ class Handler(BaseHTTPRequestHandler):
                 if res["status"] == "manual":
                     return self._send(400, {"error": "Le jeton de la tâche Claude n'est pas réglé dans les réglages de l'application."})
                 if res["status"] == "error":
-                    return self._send(502, {"error": "Claude n'a pas pu être réveillé : " + res["error"] + "."})
+                    return self._send(400, {"error": "Claude n'a pas pu être réveillé : " + res["error"] + "."})  # pas de 5xx : les proxys remplacent le message
                 return self._send(200, res)
             if path == "/api/notify":
                 st = engine.notify_current(force=True)

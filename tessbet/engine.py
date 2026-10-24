@@ -421,8 +421,10 @@ def _routine_post(env, text):
         with urllib.request.urlopen(req, timeout=25) as r:
             res = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as err:
-        return {"status": "error", "error": FIRE_ERRORS.get(err.code, f"erreur {err.code}")}
+        print(f"réveil de Claude refusé : HTTP {err.code}", file=sys.stderr)
+        return {"status": "error", "error": FIRE_ERRORS.get(err.code, "erreur") + f" (code {err.code})"}
     except Exception as e:
+        print(f"réveil de Claude impossible : {type(e).__name__}", file=sys.stderr)
         return {"status": "error", "error": f"connexion impossible ({str(e)[:60]})"}
     return {"status": "fired", "session_url": res.get("claude_code_session_url"),
             "fired_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
