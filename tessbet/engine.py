@@ -268,6 +268,40 @@ def select(cands, cfg, limit=None):
     return picked
 
 
+def blockers(c, cfg):
+    """Pourquoi ce pari ne passe pas les critères du moteur (liste vide = il passe)."""
+    s, out = cfg["selection"], []
+    if c["prob"] < s["min_prob"]:
+        out.append(f"{round(c['prob'] * 100)} % de chances, il en faut au moins {round(s['min_prob'] * 100)} %")
+    if c["odds"] < s["min_odds"]:
+        out.append(f"cote de {fr(c['odds'], 2)}, minimum {fr(s['min_odds'], 2)}")
+    if c["n_books"] < s["min_books"]:
+        out.append(f"{c['n_books']} bookmaker{'s' if c['n_books'] > 1 else ''} seulement, minimum {s['min_books']}")
+    if c["edge"] < s["min_edge"]:
+        out.append("cote trop basse par rapport aux chances")
+    if c.get("af_agrees") is False:
+        out.append("l'avis statistique sur la forme n'est pas d'accord")
+    return out
+
+
+def near_misses(cands, cfg, limit=3):
+    """Les paris les plus proches d'être retenus, avec ce qui les a bloqués (pour expliquer « aucun pari »)."""
+    rows, seen = [], set()
+    for c in sorted(cands, key=lambda c: c["prob"], reverse=True):
+        if c["event_id"] in seen:
+            continue
+        why = blockers(c, cfg)
+        if not why:
+            continue
+        seen.add(c["event_id"])
+        rows.append({"match": f"{c['home']} – {c['away']}", "league": c["league"], "pick_label": pick_label(c),
+                     "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
+                     "prob": round(c["prob"], 3), "odds": round(c["odds"], 2), "reasons": why})
+        if len(rows) >= limit:
+            break
+    return rows
+
+
 # ---------------------------------------------------------------- Revue par Claude (recherche web)
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 VERDICTS = ("confirme", "prudence", "ecarte")
@@ -614,7 +648,7 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
     """Présélection -> vérification par Claude -> choix final. Claude peut écarter, jamais ajouter."""
     cl = cfg.get("claude", {})
     pool = select(cands, cfg, limit=cl.get("max_review", 6))
-    info = {"reviewed": len(pool), "dropped": 0, "unavailable": False}
+    info = {"reviewed": len(pool), "dropped": 0, "unavailable": False, "dropped_items": []}
     if not pool:
         return [], info
     verdicts = None
@@ -645,6 +679,8 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
         v = verdicts.get(review_key(c))
         if not v or v["verdict"] == "ecarte":
             info["dropped"] += 1
+            info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c),
+                                          "resume": v["resume"] if v else "pas vérifié par Claude"})
             continue
         c["claude"] = v
         if v["verdict"] == "prudence":
@@ -941,6 +977,7 @@ def run(mode=None, offset=None):
 
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
+              "claude_dropped_items": info.get("dropped_items", []), "near": near_misses(cands, cfg),
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}

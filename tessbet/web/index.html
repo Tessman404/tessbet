@@ -278,6 +278,12 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .dayhead em { margin-left: auto; font: 600 .85rem var(--text); font-style: normal; color: var(--chalk); padding: 2px 10px; border: 1.5px solid var(--turf-3); border-radius: 999px; }
 .daysec:first-child .dayhead { margin-top: 4px; }
 .daysec .empty { margin-bottom: 18px; }
+.why { margin-top: 12px; }
+.why summary { color: var(--chalk); }
+.why ul { margin: 8px 0 0; padding-left: 18px; color: var(--chalk); font-size: .9rem; }
+.why li { margin: 8px 0; }
+.why li small { display: block; color: var(--chalk-dim); font-size: .84rem; }
+.why p { margin: 8px 0 0; color: var(--chalk-dim); font-size: .85rem; }
 @media (max-width: 640px) { .horizon { flex-direction: column; align-items: stretch; } .segs { display: grid; grid-template-columns: 1fr 1fr; } }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -618,6 +624,20 @@ function renderCmd() {
       el('span', {}, el('b', { text: s.label }), el('small', { text: s.sub })))))));
 }
 
+/* « Pourquoi aucun pari ? » : les matchs les plus proches d'être retenus et ce qui les a bloqués. */
+function whyBox(d) {
+  const near = d.near || [], dropped = d.claude_dropped_items || [];
+  if (!near.length && !dropped.length) return null;
+  const items = [
+    ...dropped.map(x => el('li', {}, el('b', { text: x.match }), ' – ' + x.pick_label, el('small', { text: 'Écarté par Claude : ' + x.resume }))),
+    ...near.map(x => el('li', {}, el('b', { text: x.match }), ` – ${x.pick_label} (cote ${odds(x.odds)}, ${x.kickoff_local})`,
+      el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))];
+  return el('details', { class: 'why' }, el('summary', { text: 'Pourquoi aucun pari ?' }),
+    el('ul', {}, items),
+    el('p', { text: (dropped.length ? 'Claude a écarté ' + plural(dropped.length, 'pari', 'paris') + ' après vérification. ' : '')
+      + (near.length ? 'Voici aussi les matchs les plus proches des critères, sur ' + plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés') + '.' : '') }));
+}
+
 /* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
 function daySection(i, multi) {
   const d = i.d, today = i.day === 'today', word = today ? 'aujourd\'hui' : 'demain';
@@ -636,7 +656,7 @@ function daySection(i, multi) {
       el('p', { text: 'Tu n\'as rien à faire : dès que Claude a fini ses vérifications, les paris retenus s\'affichent ici.' })));
   } else if (!i.picks) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Pas de pari ' + word }),
-      el('p', { text: (d.message || 'Aucun match ne remplit les critères de solidité.') + (today ? ' Repasse demain.' : '') })));
+      el('p', { text: (d.message || 'Aucun match ne remplit les critères de solidité.') + (today ? ' Repasse demain.' : '') }), whyBox(d)));
   } else {
     d.selections.forEach(s => box.append(ticket(s)));
   }
