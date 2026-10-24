@@ -87,6 +87,25 @@ def to_paris(d_utc):
         return d_utc.astimezone(dt.timezone(dt.timedelta(hours=2 if summer else 1)))
 
 
+def paris_date(now=None):
+    """Date du jour à Paris (ou de l'instant donné)."""
+    return to_paris(now or dt.datetime.now(dt.timezone.utc)).date()
+
+
+def result_path(mode, date_iso):
+    """Où est rangée l'analyse d'un jour précis (une par jour, aujourd'hui comme demain)."""
+    if mode == "demo":
+        return os.path.join(DATA, f"demo_{date_iso}.json")
+    return os.path.join(DATA, "history", f"{date_iso}.json")
+
+
+def save_result(result):
+    """Range l'analyse dans le fichier de son jour ; celle d'aujourd'hui est aussi la « dernière » (selections.json)."""
+    write_json(result_path(result["mode"], result["date"]), result)
+    if result["date"] == paris_date().isoformat():
+        write_json(os.path.join(DATA, "selections.json"), result)
+
+
 def parse_iso(s):
     return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
 
@@ -270,14 +289,22 @@ def anthropic_post(payload, key):
         raise RuntimeError(f"erreur {e.code} de l'API Claude : {detail}")
 
 
-def build_review_prompt(pool, today):
+def _when(today, now_date):
+    """Début des consignes : la vraie date, et un rappel si les matchs sont ceux de demain."""
+    head = f"Nous sommes le {(now_date or today).isoformat()}."
+    if now_date and today > now_date:
+        head += f" Les matchs ci-dessous se jouent demain, le {today.isoformat()} : cherche les informations les plus récentes à ce jour."
+    return head
+
+
+def build_review_prompt(pool, today, now_date=None):
     lines = []
     for c in pool:
         kick = to_paris(parse_iso(c["commence"])).strftime("%H:%M")
         lines.append(f"- id={review_key(c)} | {c['sport']} | {c['league']} | {c['home']} contre {c['away']} | "
                      f"pari : {pick_label(c)} | cote {c['odds']:.2f} | probabilité estimée d'après les cotes "
                      f"{round(c['prob'] * 100)} % | coup d'envoi {kick} (heure de Paris)")
-    return f"""Nous sommes le {today.isoformat()}. Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
+    return f"""{_when(today, now_date)} Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
 Un moteur a présélectionné les paris ci-dessous d'après les cotes des bookmakers. Ton travail : vérifier sur le web
 s'il existe une raison concrète de se méfier de chacun, puis rendre un verdict.
 
@@ -439,7 +466,8 @@ def routine_launch(today, env):
                 return dict(json.load(f), status="already")
         except (OSError, ValueError):
             pass
-    res = _routine_post(env, f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {today.isoformat()}. "
+    later = " Les matchs à analyser sont ceux de demain." if today > paris_date() else ""
+    res = _routine_post(env, f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {today.isoformat()}.{later} "
                              f"Fichier à traiter : request-{today.isoformat()}.json (réponse : answer-{today.isoformat()}.json).")
     if res["status"] == "fired":
         write_json(path, {"fired_at": res["fired_at"], "session_url": res["session_url"]})
@@ -452,7 +480,7 @@ def routine_test(env):
                               "Ne fais AUCUNE recherche, n'écris aucun fichier, ne pousse rien : réponds seulement « Test reçu » en une phrase.")
 
 
-def claude_review(pool, cfg, env, today):
+def claude_review(pool, cfg, env, today, warnings=None):
     """Demande à Claude (avec recherche web) de vérifier chaque pari. Retourne {clé: verdict}."""
     cl = cfg["claude"]
     cache_path = os.path.join(DATA, f"review_{today.isoformat()}.json")
@@ -468,13 +496,16 @@ def claude_review(pool, cfg, env, today):
         with open(cache_path, encoding="utf-8") as f:
             cache = json.load(f)
         todo = [c for c in pool if review_key(c) not in cache]
-        if todo:
-            raise WaitingForClaude("réponse de Claude incomplète : en attente")
+        if todo:  # les cotes ont bougé depuis la demande : Claude n'a pas vu ces paris, donc on ne les propose pas
+            if warnings is not None:
+                warnings.append(f"{len(todo)} pari{'s' if len(todo) > 1 else ''} apparu{'s' if len(todo) > 1 else ''} après la réponse de Claude : "
+                                "non vérifié, donc écarté.")
+            return cache
     if todo:
         key = env.get("ANTHROPIC_API_KEY")
         if not key:
             raise RuntimeError("clé ANTHROPIC_API_KEY manquante dans les réglages de l'application")
-        messages = [{"role": "user", "content": build_review_prompt(todo, today)}]
+        messages = [{"role": "user", "content": build_review_prompt(todo, today, paris_date())}]
         payload = {"model": cl["model"], "max_tokens": cl["max_tokens"], "messages": messages,
                    "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": cl["max_searches"],
                               "user_location": {"type": "approximate", "country": "FR", "timezone": "Europe/Paris"}}]}
@@ -495,9 +526,9 @@ def _review_cache_path(today):
     return os.path.join(DATA, f"review_{today.isoformat()}.json")
 
 
-def build_analysis_prompt(c, v, today):
+def build_analysis_prompt(c, v, today, now_date=None):
     kick = to_paris(parse_iso(c["commence"])).strftime("%H:%M")
-    return f"""Nous sommes le {today.isoformat()}. Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
+    return f"""{_when(today, now_date)} Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
 Le pari suivant a déjà été présélectionné d'après les cotes, puis vérifié : rédige l'ANALYSE ÉCRITE complète pour Thomas.
 
 Pari : {pick_label(c)} | {c['sport']} | {c['league']} | {c['home']} contre {c['away']} | cote {c['odds']:.2f} |
@@ -520,7 +551,7 @@ Ne promets aucun gain, n'écris pas "sûr" ni "garanti". Ne propose aucun autre 
 def claude_analysis(c, v, cfg, env, today):
     key = env.get("ANTHROPIC_API_KEY")
     cl = cfg["claude"]
-    messages = [{"role": "user", "content": build_analysis_prompt(c, v, today)}]
+    messages = [{"role": "user", "content": build_analysis_prompt(c, v, today, paris_date())}]
     payload = {"model": cl["model"], "max_tokens": cl.get("analysis_tokens", 3500), "messages": messages,
                "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": cl.get("analysis_searches", 6),
                           "user_location": {"type": "approximate", "country": "FR", "timezone": "Europe/Paris"}}]}
@@ -591,7 +622,7 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
         verdicts = demo_review(pool)
     elif cl.get("enabled", True):
         try:
-            verdicts = claude_review(pool, cfg, env, today)
+            verdicts = claude_review(pool, cfg, env, today, warnings)
         except WaitingForClaude as w:
             info["waiting"] = True
             info["fire"] = w.fire or None
@@ -700,11 +731,12 @@ def fetch_live_events(cfg, env, now, warnings):
     keys += [k for k in cfg["leagues"]["basketball"] if k in active][:caps["basketball"]]
     keys += [k for k in active if k.startswith("tennis_")][:caps["tennis"]]
     paris_now = to_paris(now)
-    end = (paris_now + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # fenêtre de 48 h (aujourd'hui + demain) pour le même prix : un appel = un crédit, quel que soit le nombre de matchs
+    end = (paris_now + dt.timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     events, quota = [], None
     books = cfg.get("bookmakers") or []
-    tag = hashlib.md5((",".join(books or [cfg["regions"]]) + "|links").encode()).hexdigest()[:6]
+    tag = hashlib.md5((",".join(books or [cfg["regions"]]) + "|links|48h").encode()).hexdigest()[:6]
     for k in keys:
         cache_path = os.path.join(DATA, f"cache_{k}_{tag}.json")
         raw = None
@@ -733,8 +765,8 @@ def fetch_live_events(cfg, env, now, warnings):
 
 
 # ---------------------------------------------------------------- mode démo
-def demo_events(now):
-    today = to_paris(now).date()
+def demo_events(now, day=None):
+    today = day or to_paris(now).date()
     rnd = random.Random(int(hashlib.md5(today.isoformat().encode()).hexdigest()[:8], 16))
     books = [("pinnacle", "Pinnacle", 0.025), ("betclic_fr", "Betclic", 0.06), ("winamax_fr", "Winamax", 0.055),
              ("unibet_fr", "Unibet", 0.06), ("bet365", "Bet365", 0.05), ("bwin", "Bwin", 0.065),
@@ -795,8 +827,9 @@ def send_phone(title, message, tag="tessbet"):
 
 def notification_text(result):
     sel = result["selections"]
+    tomorrow = result.get("offset") == 1
     if not sel:
-        return "Tessbet : pas de pari aujourd'hui", result["message"]
+        return ("Tessbet : pas de pari demain" if tomorrow else "Tessbet : pas de pari aujourd'hui"), result["message"]
     lines = []
     for s in sel:
         verdict = "Claude confirme" if s["claude"] and s["claude"]["verdict"] == "confirme" else "prudence"
@@ -804,7 +837,7 @@ def notification_text(result):
             verdict = "non vérifié"
         lines.append(f"{s['kickoff_local']} {s['match']} : {s['pick_label']} @ {fr(s['odds'], 2)} "
                      f"({round(s['prob'] * 100)} %, {verdict})")
-    title = f"Tessbet : {len(sel)} pari{'s' if len(sel) > 1 else ''} du jour"
+    title = f"Tessbet : {len(sel)} pari{'s' if len(sel) > 1 else ''} " + ("pour demain" if tomorrow else "du jour")
     return title, "\n".join(lines)
 
 
@@ -830,7 +863,7 @@ def notify_phone(result, cfg, env, force=False):
         with open(state_path, encoding="utf-8") as f:
             if json.load(f).get("digest") == digest:
                 return "déjà notifié"
-    data = {"tag": "tessbet"}
+    data = {"tag": "tessbet-demain" if result.get("offset") == 1 else "tessbet"}  # deux jours, deux notifications distinctes
     if n.get("app_url"):
         data["url"] = n["app_url"]
     ha_post(f"{base}/api/services/notify/{service}", token, {"title": title, "message": message, "data": data})
@@ -860,19 +893,22 @@ def build_message(n, analysed, info, cfg):
     return f"{n} paris retenus sur {analysed} matchs analysés, vérifiés par Claude." + tail
 
 
-def run(mode=None):
+def run(mode=None, offset=None):
+    """Analyse d'un jour : offset 0 = aujourd'hui (matchs pas encore commencés), 1 = demain (TESSBET_DAY=tomorrow)."""
     cfg, env = load_config(), load_env()
     mode = mode or cfg.get("mode", "demo")
+    if offset is None:
+        offset = 1 if os.environ.get("TESSBET_DAY") == "tomorrow" else 0
     now = dt.datetime.now(dt.timezone.utc)
-    today = to_paris(now).date()
+    today = to_paris(now).date() + dt.timedelta(days=offset)  # le jour analysé
     warnings, quota = [], None
 
     if mode == "demo":
-        events = demo_events(now)
+        events = demo_events(now, today)
     else:
         events, quota = fetch_live_events(cfg, env, now, warnings)
         events = [e for e in events
-                  if now + dt.timedelta(minutes=10) <= parse_iso(e["commence"])
+                  if (offset or now + dt.timedelta(minutes=10) <= parse_iso(e["commence"]))
                   and to_paris(parse_iso(e["commence"])).date() == today]
 
     cands = []
@@ -903,14 +939,12 @@ def run(mode=None):
     analysed = len({c["event_id"] for c in cands})
     msg = build_message(len(selections), analysed, info, cfg)
 
-    result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode,
+    result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
-    write_json(os.path.join(DATA, "selections.json"), result)
-    if mode != "demo":  # on garde chaque jour pour pouvoir revoir les paris donnés
-        write_json(os.path.join(DATA, "history", f"{today.isoformat()}.json"), result)
+    save_result(result)  # un fichier par jour : on peut revoir les paris donnés, et préparer demain
     if os.environ.get("TESSBET_NO_NOTIFY") or result["waiting"]:
         result["notification"] = "pas encore envoyée"
     else:
@@ -918,17 +952,23 @@ def run(mode=None):
             result["notification"] = notify_phone(result, cfg, env)
         except Exception as e:  # une notification ratée ne doit jamais bloquer l'analyse
             result["notification"] = f"notification impossible : {str(e)[:100]}"
-    write_json(os.path.join(DATA, "selections.json"), result)
+    save_result(result)
     return result
 
 
-def notify_current(force=False):
-    """Envoie sur le téléphone l'analyse du jour déjà faite. Retourne un court statut."""
-    path = os.path.join(DATA, "selections.json")
+def notify_current(force=False, offset=0):
+    """Envoie sur le téléphone l'analyse déjà faite (offset 0 = aujourd'hui, 1 = demain). Retourne un court statut."""
+    mode = load_config().get("mode", "demo")
+    date = (paris_date() + dt.timedelta(days=offset)).isoformat()
+    path = result_path(mode, date)
+    if not os.path.exists(path) and offset == 0:
+        path = os.path.join(DATA, "selections.json")  # anciennes données
     if not os.path.exists(path):
         return "notification impossible : pas encore d'analyse"
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
+    if d.get("date") != date:
+        return "notification impossible : pas encore d'analyse"
     if d.get("waiting"):
         return "pas encore envoyée : en attente de l'analyse de Claude"
     try:
@@ -936,7 +976,7 @@ def notify_current(force=False):
     except Exception as e:
         status = f"notification impossible : {str(e)[:100]}"
     d["notification"] = status
-    write_json(path, d)
+    save_result(d)
     return status
 
 
@@ -953,9 +993,9 @@ if __name__ == "__main__":
         print("Message de test envoyé.")
         sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[1] == "notify-now":
-        print(notify_current(force=True))
+        print(notify_current(force=True, offset=1 if "demain" in sys.argv[2:] else 0))
         sys.exit(0)
-    mode_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    mode_arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("demo", "live") else None
     res = run(mode_arg)
     print(f"[{res['mode']}] {res['message']}")
     for s in res["selections"]:

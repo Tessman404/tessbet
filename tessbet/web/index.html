@@ -263,6 +263,22 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .tech { margin: 20px 0 0; }
 .tech summary { color: var(--chalk-dim); font-size: .85rem; }
 .tech ul { margin: 6px 0 0; padding-left: 18px; color: var(--chalk-dim); font-size: .85rem; }
+/* ---- période analysée : 24 h ou 48 h ---- */
+.horizon { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; padding: 0 18px 16px; }
+.horizon .hlabel { font-size: .88rem; font-weight: 600; color: var(--chalk-dim); }
+.segs { display: inline-flex; gap: 3px; padding: 3px; border-radius: 12px; background: var(--turf); }
+.seg { display: flex; flex-direction: column; align-items: flex-start; min-height: 46px; padding: 6px 16px; text-align: left; border: 0; border-radius: 9px; background: transparent; color: var(--chalk-dim); }
+.seg b { font: 700 1.05rem/1.1 var(--display); color: inherit; }
+.seg small { font-size: .76rem; line-height: 1.25; color: inherit; opacity: .9; }
+.seg:hover:not(.on):not(:disabled) { color: #fff; background: var(--turf-2); }
+.seg.on { background: var(--turf-3); color: #fff; box-shadow: inset 0 0 0 1.5px var(--chalk-dim); }
+.seg:disabled { opacity: .6; cursor: default; }
+.dayhead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 24px 0 12px; font: 700 1.4rem/1.2 var(--display); color: #fff; }
+.dayhead span { font: 400 .95rem var(--text); color: var(--chalk-dim); }
+.dayhead em { margin-left: auto; font: 600 .85rem var(--text); font-style: normal; color: var(--chalk); padding: 2px 10px; border: 1.5px solid var(--turf-3); border-radius: 999px; }
+.daysec:first-child .dayhead { margin-top: 4px; }
+.daysec .empty { margin-bottom: 18px; }
+@media (max-width: 640px) { .horizon { flex-direction: column; align-items: stretch; } .segs { display: grid; grid-template-columns: 1fr 1fr; } }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
@@ -296,7 +312,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
     <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
     <div class="cmd" id="cmd" aria-label="Analyse du jour"></div>
     <p class="summary" id="summary"></p>
-    <div id="tickets" class="cols"></div>
+    <div id="tickets"></div>
     <details class="tech" id="tech" hidden><summary id="techsum"></summary><ul id="warnings"></ul></details>
     <p class="note" id="disclaimer"></p>
   </section>
@@ -326,7 +342,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 
 <script>
 const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾' };
-const state = { today: null, stats: null, bets: [], settings: null, busy: false };
+const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null };
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -367,7 +383,7 @@ function toast(msg, err = false) {
 function shareText(s) {
   const cl = s.claude || {};
   const sport = SPORT[s.sport] || '';
-  const lines = [`${sport} ${s.league} – ${s.pick_label}`, `${s.match} (${s.kickoff_local})`,
+  const lines = [`${sport} ${s.league} – ${s.pick_label}`, `${s.match} (${fmtDay(new Date(s.kickoff).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }))} à ${s.kickoff_local})`,
     `Cote ${odds(s.odds)} (${s.bookmaker}) – ${pct(s.prob)} de chances estimées`];
   if (cl.resume) lines.push('', `Claude : ${cl.resume}`);
   if (cl.analyse) lines.push('', cl.analyse);
@@ -466,6 +482,12 @@ async function saveBet(s, stakeValue, oddsValue, book, force) {
 }
 
 const parisToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+const addDays = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+const dayDate = day => day === 'tomorrow' ? addDays(parisToday(), 1) : parisToday();
+const fmtDay = iso => new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const horizon = () => (state.settings && state.settings.horizon === 48) ? 48 : 24;   // 24 h = aujourd'hui, 48 h = aujourd'hui + demain
+const activeDays = () => horizon() === 48 ? ['today', 'tomorrow'] : ['today'];
+const betDate = b => b.kickoff ? new Date(b.kickoff).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }) : b.date;
 const ICONS = {
   scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.9-4.9"/><path d="m8 10.5 2 2 3.5-4"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
@@ -476,116 +498,163 @@ function icon(name) { const n = document.createElement('span'); n.className = 'i
 function hhmm(iso) { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
 const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
 
-/* Où en est la journée : à lancer (todo), Claude travaille (waiting) ou terminée (done). */
-function dayInfo() {
-  const d = state.today || {}, st = state.settings || { source: 'api' };
-  const fresh = !!d.generated_at && d.date === parisToday();  // une analyse d'hier ne compte pas pour aujourd'hui
+/* Où en est un jour : à lancer (todo), Claude travaille (waiting) ou terminé (done). */
+function dayInfo(day) {
+  const d = state[day] || {}, date = dayDate(day);
+  const fresh = !!d.generated_at && d.date === date;  // une analyse d'un autre jour ne compte pas
   const kind = !fresh ? 'todo' : d.waiting ? 'waiting' : 'done';
   const fire = (fresh && d.fire) || {};
   const since = kind === 'waiting' ? (fire.fired_at || d.generated_at) : null;
-  return { kind, fresh, d, source: st.source, routine: st.routine !== false, fire,
-    waitMin: since ? (Date.now() - new Date(since).getTime()) / 60000 : 0,
+  return { day, date, d, fresh, kind, fire, waitMin: since ? (Date.now() - new Date(since).getTime()) / 60000 : 0,
     picks: fresh ? (d.selections || []).length : 0 };
 }
 
-function cmdTexts(i) {
-  const claude = i.source === 'claude_task', f = i.fire;
-  if (i.kind === 'waiting') {
-    if (f.status === 'error') return { dot: 'err', title: 'Claude n\'a pas pu être réveillé', err: true, sub: f.error + '. Réessaie : rien n\'a été perdu.' };
-    if (f.status === 'manual' || !i.routine) return { dot: 'err', title: 'Réveil de Claude non réglé', err: true, sub: 'Colle le jeton de la tâche Claude dans la configuration de l\'application (Paramètres > Applications > Tessbet).' };
+/* Vue d'ensemble sur la période choisie (24 h = aujourd'hui, 48 h = aujourd'hui + demain). */
+function overview() {
+  const st = state.settings || { source: 'api' }, infos = activeDays().map(dayInfo);
+  const kind = infos.some(i => i.kind === 'waiting') ? 'waiting' : infos.every(i => i.kind === 'done') ? 'done' : 'todo';
+  return { infos, kind, h: horizon(), source: st.source, routine: st.routine !== false, picks: infos.reduce((n, i) => n + i.picks, 0) };
+}
+const failed = i => i.kind === 'waiting' && ['error', 'manual'].includes(i.fire.status);
+/* Jours à (re)lancer : tout si tout est fait (actualiser), sinon ceux qui ne sont pas terminés. */
+const launchTargets = o => o.kind === 'done' ? o.infos : o.infos.filter(i => i.kind !== 'done');
+
+function cmdTexts(o) {
+  const claude = o.source === 'claude_task', two = o.h === 48;
+  if (o.kind === 'waiting') {
+    const w = o.infos.filter(i => i.kind === 'waiting'), bad = w.find(failed);
+    if (bad && bad.fire.status === 'error') return { dot: 'err', title: 'Claude n\'a pas pu être réveillé', err: true, sub: bad.fire.error + '. Réessaie : rien n\'a été perdu.' };
+    if (bad || !o.routine) return { dot: 'err', title: 'Réveil de Claude non réglé', err: true, sub: 'Colle le jeton de la tâche Claude dans la configuration de l\'application (Paramètres > Applications > Tessbet).' };
+    const t0 = w.map(i => i.fire.fired_at).filter(Boolean).sort()[0];
     return { dot: 'run', title: 'Claude fait ses recherches',
-      sub: 'Lancé' + (f.fired_at ? ' à ' + hhmm(f.fired_at) : '') + '. Compte 10 à 20 minutes : le résultat s\'affiche ici tout seul.' };
+      sub: 'Lancé' + (t0 ? ' à ' + hhmm(t0) : '') + (two && w.length > 1 ? ' pour aujourd\'hui et demain' : '') + '. Compte 10 à 20 minutes : le résultat s\'affiche ici tout seul.' };
   }
-  if (i.kind === 'done') return { dot: 'ok', title: 'Analyse terminée',
-    sub: 'Faite à ' + hhmm(i.d.generated_at) + ' · ' + plural(i.d.matches_analysed || 0, 'match analysé', 'matchs analysés') + ' · les matchs de demain sont pris en compte dès minuit.' };
-  return { dot: 'idle', title: 'Analyse du jour',
-    sub: 'Pas encore lancée. Elle couvre les matchs d\'aujourd\'hui, jusqu\'à minuit' + (claude ? ', vérifiés par Claude sans frais d\'API.' : ' (utilise des crédits de l\'API).') };
+  if (o.kind === 'done') {
+    const when = hhmm(o.infos.map(i => i.d.generated_at).sort().pop());
+    const n = o.infos.map(i => i.d.matches_analysed || 0);
+    return { dot: 'ok', title: 'Analyse terminée', sub: two
+      ? 'Faite à ' + when + ' · ' + plural(n[0], 'match aujourd\'hui', 'matchs aujourd\'hui') + ', ' + n[1] + ' demain.'
+      : 'Faite à ' + when + ' · ' + plural(n[0], 'match analysé', 'matchs analysés') + ' · passe en 48 h pour voir aussi demain.' };
+  }
+  if (two && o.infos[0].kind === 'done') return { dot: 'idle', title: 'Demain reste à analyser', sub: 'Aujourd\'hui est fait. Lance l\'analyse pour ajouter les matchs de demain.' };
+  const cost = claude ? ', vérifiés par Claude sans frais d\'API.' : two ? ' (utilise des crédits de l\'API, deux fois plus pour deux jours).' : ' (utilise des crédits de l\'API).';
+  return { dot: 'idle', title: two ? 'Analyse sur 48 h' : 'Analyse du jour',
+    sub: 'Pas encore lancée. Elle couvre les matchs d\'aujourd\'hui' + (two ? ' et de demain, jusqu\'à minuit demain soir' : ', jusqu\'à minuit') + cost };
 }
 
-function cmdAction(i) {
-  const claude = i.source === 'claude_task', f = i.fire;
-  if (!claude) return { label: i.kind === 'done' ? 'Actualiser (API, crédits)' : 'Lancer l\'analyse (API, crédits)', ico: i.kind === 'done' ? 'refresh' : 'scan', ghost: i.kind === 'done', run: () => launch('api') };
-  if (i.kind === 'waiting') {
-    if (f.status === 'error' || f.status === 'manual') return { label: 'Réessayer', ico: 'refresh', ghost: false, run: () => launch('claude_task', false) };
-    return i.waitMin >= 20
-      ? { label: 'Relancer Claude', ico: 'refresh', ghost: false, run: () => launch('claude_task', true) }
-      : { label: 'Revérifier la réponse', ico: 'refresh', ghost: true, run: () => launch('claude_task', false) };
+function cmdAction(o) {
+  const claude = o.source === 'claude_task', run = () => launch(claude ? 'claude_task' : 'api');
+  const api = claude ? '' : ' (API, crédits)';
+  if (o.kind === 'done') return { label: claude ? 'Actualiser l\'analyse' : 'Actualiser' + api, ico: 'refresh', ghost: true, run };
+  if (o.kind === 'waiting') {
+    const w = o.infos.filter(i => i.kind === 'waiting');
+    if (w.some(failed)) return { label: 'Réessayer', ico: 'refresh', ghost: false, run };
+    if (o.infos.some(i => i.kind === 'todo')) return { label: 'Lancer l\'analyse', ico: 'scan', ghost: false, run };
+    return w.some(i => i.waitMin >= 20) ? { label: 'Relancer Claude', ico: 'refresh', ghost: false, run }
+      : { label: 'Revérifier la réponse', ico: 'refresh', ghost: true, run };
   }
-  if (i.kind === 'done') return { label: 'Actualiser l\'analyse', ico: 'refresh', ghost: true, run: () => launch('claude_task', false) };
-  return { label: 'Lancer l\'analyse', ico: 'scan', ghost: false, run: () => launch('claude_task', false) };
+  const tomorrowOnly = o.h === 48 && o.infos[0].kind === 'done';
+  return { label: (tomorrowOnly ? 'Analyser demain' : 'Lancer l\'analyse') + api, ico: 'scan', ghost: false, run };
 }
 
 /* La journée en trois temps : analyser, enregistrer ses paris, les suivre en direct. */
-function railSteps(i) {
-  const today = i.d.date, mine = state.bets.filter(b => b.date === today).length;
+function railSteps(o) {
+  const dates = o.infos.map(i => i.date);
+  const mine = state.bets.filter(b => dates.includes(betDate(b))).length;
   const pending = state.bets.filter(b => b.result === 'pending').length;
-  const s1 = i.kind === 'done' ? { st: 'done', sub: i.picks ? plural(i.picks, 'pari retenu', 'paris retenus') : 'Aucun pari solide' }
-    : i.kind === 'waiting' ? { st: 'now', sub: ['error', 'manual'].includes(i.fire.status) ? 'Réveil à relancer' : 'Claude travaille' } : { st: 'now', sub: 'À lancer' };
+  const live = pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours';
+  const s1 = o.kind === 'done' ? { st: 'done', sub: o.picks ? plural(o.picks, 'pari retenu', 'paris retenus') : 'Aucun pari solide' }
+    : o.kind === 'waiting' ? { st: 'now', sub: o.infos.some(failed) ? 'Réveil à relancer' : 'Claude travaille' }
+    : { st: 'now', sub: o.infos.some(i => i.kind === 'done') ? 'Demain à lancer' : 'À lancer' };
   let s2, s3;
-  if (i.kind !== 'done') { s2 = { st: 'todo', sub: 'Après l\'analyse' }; s3 = { st: 'todo', sub: pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours' }; }
-  else if (!i.picks) { s2 = { st: 'skip', sub: 'Rien à enregistrer' }; s3 = { st: 'skip', sub: pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours' }; }
-  else {
-    s2 = mine ? { st: 'done', sub: plural(mine, 'pari enregistré', 'paris enregistrés') } : { st: 'now', sub: 'À enregistrer ci-dessous' };
-    s3 = { st: mine ? 'now' : 'todo', sub: pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours' };
-  }
+  if (o.picks) {
+    s2 = mine ? { st: 'done', sub: plural(mine, 'pari enregistré', 'paris enregistrés') } : { st: o.kind === 'done' ? 'now' : 'todo', sub: 'À enregistrer ci-dessous' };
+    s3 = { st: mine && o.kind === 'done' ? 'now' : 'todo', sub: live };
+  } else if (o.kind === 'done') { s2 = { st: 'skip', sub: 'Rien à enregistrer' }; s3 = { st: 'skip', sub: live }; }
+  else { s2 = { st: 'todo', sub: 'Après l\'analyse' }; s3 = { st: 'todo', sub: live }; }
   return [
     { n: 1, label: 'Analyse', tab: 'today', ...s1 },
     { n: 2, label: 'Mes paris', tab: 'track', ...s2 },
     { n: 3, label: 'En direct', tab: 'live', ...s3 }];
 }
 
+async function setHorizon(h) {
+  if (h === horizon() || state.busy) return;
+  const prev = horizon();
+  state.settings = Object.assign({ source: 'api' }, state.settings, { horizon: h });
+  renderToday(); watchWaiting();
+  try { await api('settings', 'POST', { horizon: h }); }
+  catch (e) { state.settings.horizon = prev; renderToday(); toast(e.message, true); }
+}
+function horizonRow() {
+  const seg = (h, label, hint) => el('button', { class: 'seg' + (h === horizon() ? ' on' : ''), type: 'button', 'aria-pressed': String(h === horizon()),
+    disabled: state.busy, onclick: () => setHorizon(h) }, el('b', { text: label }), el('small', { text: hint }));
+  return el('div', { class: 'horizon', role: 'group', 'aria-label': 'Période analysée' },
+    el('span', { class: 'hlabel', text: 'Période analysée' }),
+    el('div', { class: 'segs' }, seg(24, '24 h', 'aujourd\'hui'), seg(48, '48 h', 'aujourd\'hui + demain')));
+}
+
 function renderCmd() {
   const box = document.getElementById('cmd');
   if (!state.today) return;
-  const i = dayInfo(), t = cmdTexts(i), a = cmdAction(i);
+  const o = overview(), t = cmdTexts(o), a = cmdAction(o);
   box.replaceChildren();
   const btn = el('button', { class: 'cta' + (a.ghost && !state.busy ? ' ghost' : ''), type: 'button', disabled: state.busy, onclick: a.run },
     icon(state.busy ? 'spin' : a.ico), el('span', { text: state.busy ? 'Analyse en cours…' : a.label }));
   box.append(el('div', { class: 'main' },
     el('div', { class: 'state' }, el('span', { class: 'dot ' + t.dot, 'aria-hidden': 'true' }),
       el('div', {}, el('h2', { text: t.title }), el('p', { class: 'sub' + (t.err ? ' err' : ''), role: t.err ? 'alert' : null, text: t.sub }))),
-    btn));
-  if (i.source === 'claude_task' && i.kind === 'waiting') {  // la voie payante reste possible, mais discrète
+    btn), horizonRow());
+  if (o.source === 'claude_task' && o.kind === 'waiting') {  // la voie payante reste possible, mais discrète
     box.append(el('details', { class: 'more' }, el('summary', { text: 'Claude ne répond pas ? Autres options' }),
-      el('p', { text: 'L\'API Anthropic peut faire l\'analyse tout de suite, mais elle consomme des crédits de ta clé.' }),
+      el('p', { text: 'L\'API Anthropic peut faire l\'analyse tout de suite, mais elle consomme des crédits de ta clé' + (o.h === 48 ? ' (deux fois plus pour deux jours).' : '.') }),
       el('button', { class: 'btn small ghost', type: 'button', disabled: state.busy, text: 'Analyser avec l\'API (crédits)', onclick: () => launch('api') })));
   }
-  if (i.kind === 'waiting' && t.dot === 'run') box.append(el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i')));
-  box.append(el('ol', { class: 'rail', 'aria-label': 'Ta journée' }, railSteps(i).map(s =>
+  if (o.kind === 'waiting' && !o.infos.some(failed) && o.routine) box.append(el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i')));
+  box.append(el('ol', { class: 'rail', 'aria-label': 'Ta journée' }, railSteps(o).map(s =>
     el('li', { class: s.st }, el('button', { type: 'button', 'aria-current': s.st === 'now' ? 'step' : null,
         onclick: () => s.tab === 'today' ? window.scrollTo({ top: document.getElementById('tickets').offsetTop - 80, behavior: 'smooth' }) : showTab(s.tab) },
       el('span', { class: 'n' }, s.st === 'done' ? icon('check') : String(s.n)),
       el('span', {}, el('b', { text: s.label }), el('small', { text: s.sub })))))));
 }
 
-function renderToday() {
-  const d = state.today;
-  if (!d) return;
-  const i = dayInfo();
-  const day = new Date((i.fresh ? d.date : parisToday()) + 'T12:00:00');
-  document.getElementById('date').textContent = day.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  document.getElementById('demo-banner').hidden = d.mode !== 'demo';
-  document.getElementById('summary').textContent = i.kind === 'done' && d.selections.length ? (d.message || '') : '';
-  const box = document.getElementById('tickets');
-  box.replaceChildren();
+/* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
+function daySection(i, multi) {
+  const d = i.d, today = i.day === 'today', word = today ? 'aujourd\'hui' : 'demain';
+  const sec = el('section', { class: 'daysec' });
+  if (multi) sec.append(el('h2', { class: 'dayhead' }, today ? 'Aujourd\'hui' : 'Demain', el('span', { text: fmtDay(i.date) }),
+    i.kind === 'done' ? el('em', { text: i.picks ? plural(i.picks, 'pari', 'paris') : 'aucun pari' }) : null));
+  if (i.kind === 'done' && i.picks) sec.append(el('p', { class: 'summary', text: d.message || '' }));
+  const box = el('div', { class: 'cols' });
   if (i.kind === 'todo') {
-    const last = d.generated_at ? new Date(d.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : null;
-    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Pas encore d\'analyse aujourd\'hui' }),
-      el('p', { text: 'Appuie sur « Lancer l\'analyse » : Tessbet cherche les paris solides parmi les matchs du jour.' + (last ? ' La dernière date de ' + last + ' : tu la retrouves dans « Passés ».' : '') })));
+    const last = today && d.generated_at && d.date !== i.date ? fmtDay(d.date) : null;
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Pas encore d\'analyse pour ' + word }),
+      el('p', { text: 'Appuie sur le bouton jaune : Tessbet cherche les paris solides parmi les matchs ' + (today ? 'd\'aujourd\'hui' : 'de demain') + '.'
+        + (last ? ' La dernière date de ' + last + ' : tu la retrouves dans « Passés ».' : '') })));
   } else if (i.kind === 'waiting') {
-    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Les paris arrivent' }),
+    box.append(el('div', { class: 'empty' }, el('h2', { text: today ? 'Les paris arrivent' : 'Les paris de demain arrivent' }),
       el('p', { text: 'Tu n\'as rien à faire : dès que Claude a fini ses vérifications, les paris retenus s\'affichent ici.' })));
-  } else if (!d.selections.length) {
-    box.append(el('div', { class: 'empty' },
-      el('h2', { text: 'Pas de pari aujourd\'hui' }),
-      el('p', { text: (d.message || 'Aucun match ne remplit les critères de solidité.') + ' Repasse demain.' })));
+  } else if (!i.picks) {
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Pas de pari ' + word }),
+      el('p', { text: (d.message || 'Aucun match ne remplit les critères de solidité.') + (today ? ' Repasse demain.' : '') })));
   } else {
     d.selections.forEach(s => box.append(ticket(s)));
   }
+  sec.append(box);
+  return sec;
+}
+
+function renderToday() {
+  const d = state.today;
+  if (!d) return;
+  const o = overview();
+  document.getElementById('date').textContent = fmtDay(parisToday());
+  document.getElementById('demo-banner').hidden = d.mode !== 'demo';
+  document.getElementById('summary').textContent = '';
+  document.getElementById('tickets').replaceChildren(...o.infos.map(i => daySection(i, o.h === 48)));
   renderCmd();
-  const w = i.fresh ? (d.warnings || []) : [];
-  const tech = document.getElementById('tech');
-  tech.hidden = !w.length;
+  const w = o.infos.flatMap(i => i.fresh ? (i.d.warnings || []).map(x => (o.h === 48 && i.day === 'tomorrow' ? 'Demain : ' : '') + x) : []);
+  document.getElementById('tech').hidden = !w.length;
   document.getElementById('techsum').textContent = 'Infos techniques (' + w.length + ')';
   document.getElementById('warnings').replaceChildren(...w.map(x => el('li', { text: x })));
   document.getElementById('disclaimer').textContent = d.disclaimer || '';
@@ -795,37 +864,49 @@ function renderSettings(st) {
 }
 
 /* ---------------- chargement ---------------- */
-async function loadToday() { state.today = await api('today'); }
+async function loadToday() { [state.today, state.tomorrow] = await Promise.all([api('today'), api('today?day=tomorrow')]); state.loadedFor = parisToday(); }
 async function loadStats() { state.stats = await api('stats'); }
 async function loadBets() { state.bets = (await api('bets')).bets; }
 async function loadSettings() { try { state.settings = await api('settings'); } catch (_) { state.settings = state.settings || { source: 'api' }; } }
 
-async function launch(source, refire) {
+async function launch(source) {
   if (state.busy) return;
-  if (source === 'api' && !confirm('L\'analyse par l\'API coûte des crédits sur ta clé Anthropic. Lancer quand même ?')) return;
+  const o = overview(), targets = launchTargets(o);
+  if (source === 'api' && !confirm('L\'analyse par l\'API coûte des crédits sur ta clé Anthropic' + (targets.length > 1 ? ' (deux jours : deux fois plus)' : '') + '. Lancer quand même ?')) return;
   state.busy = true; renderCmd();
   try {
-    state.today = await api('refresh', 'POST', { force: true, source, confirm: source === 'api', refire: !!refire });
+    for (const i of targets) {  // aujourd'hui d'abord, puis demain
+      state[i.day] = await api('refresh', 'POST', { force: true, source, confirm: source === 'api', day: i.day,
+        refire: source === 'claude_task' && i.kind === 'waiting' && i.waitMin >= 20 });
+    }
     state.busy = false; renderToday();
-    const f = state.today.fire || {};
-    if (!state.today.waiting) toast('Analyse mise à jour.');
-    else if (f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
-    else if (f.status === 'manual') toast('Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.', true);
+    const res = targets.map(i => state[i.day]), waiting = res.filter(r => r.waiting);
+    const f = waiting.map(r => r.fire || {}).find(x => x.status === 'error' || x.status === 'manual');
+    if (!waiting.length) toast('Analyse mise à jour.');
+    else if (f && f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
+    else if (f) toast('Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.', true);
     else toast('Claude est prévenu. Le résultat arrivera ici tout seul.');
-  } catch (err) { state.busy = false; renderCmd(); toast(err.message, true); }
+  } catch (err) { state.busy = false; renderToday(); toast(err.message, true); }
   watchWaiting();
 }
 let waitTimer = null;
+const anyWaiting = () => activeDays().some(day => state[day] && state[day].waiting);
 function watchWaiting() {
   clearInterval(waitTimer); waitTimer = null;
-  if (!(state.today && state.today.waiting)) return;
+  if (!anyWaiting()) return;
   waitTimer = setInterval(async () => {  // pendant que Claude travaille, on regarde si la réponse est arrivée
-    try {
-      const d = await api('today');
-      if (d.waiting && d.date === state.today.date) { renderCmd(); return; }  // rafraîchit le compteur de temps
-      state.today = d; renderToday(); clearInterval(waitTimer); waitTimer = null;
-      toast('Claude a répondu : analyse du jour à jour.');
-    } catch (_) {}
+    let changed = false;
+    for (const day of activeDays()) {
+      if (!(state[day] && state[day].waiting)) continue;
+      try {
+        const d = await api('today' + (day === 'tomorrow' ? '?day=tomorrow' : ''));
+        if (d.waiting && d.date === state[day].date) continue;
+        state[day] = d; changed = true;
+      } catch (_) {}
+    }
+    renderToday();  // rafraîchit aussi le temps écoulé
+    if (changed) toast('Claude a répondu : analyse mise à jour.');
+    if (!anyWaiting()) { clearInterval(waitTimer); waitTimer = null; }
   }, 30000);
 }
 
@@ -844,6 +925,10 @@ async function showTab(t) {
   window.scrollTo(0, 0);
 }
 document.querySelectorAll('.topbar nav button').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
+document.addEventListener('visibilitychange', async () => {  // l'app est restée ouverte pendant la nuit : on passe au nouveau jour
+  if (document.hidden || !state.loadedFor || state.loadedFor === parisToday()) return;
+  try { await Promise.all([loadToday(), loadBets()]); renderToday(); watchWaiting(); } catch (_) {}
+});
 
 (async () => {
   try { await Promise.all([loadToday(), loadStats(), loadBets(), loadSettings()]); renderToday(); renderTrack(); watchWaiting(); }

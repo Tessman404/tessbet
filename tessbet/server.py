@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 import engine
 import live
@@ -30,6 +31,12 @@ def now_utc():
 
 def today_paris():
     return engine.to_paris(now_utc()).date().isoformat()
+
+
+def day_date(day):
+    """« today » ou « tomorrow » -> date ISO à Paris."""
+    base = engine.to_paris(now_utc()).date()
+    return (base + dt.timedelta(days=1 if day == "tomorrow" else 0)).isoformat()
 
 
 def read_json(path, default):
@@ -213,29 +220,42 @@ def set_bankroll(body):
 
 
 # ---------------------------------------------------------------- analyse
-def get_today():
-    d = read_json(SEL_PATH, None)
+def read_result(date_iso):
+    """L'analyse d'un jour précis (aujourd'hui ou demain), ou None si elle n'a pas été faite."""
+    cfg = engine.load_config()
+    d = read_json(engine.result_path(cfg.get("mode", "demo"), date_iso), None)
+    last = read_json(SEL_PATH, None)  # « la dernière » : même contenu pour aujourd'hui, mais plus complète sur les anciennes données
+    if last and last.get("date") == date_iso and last.get("mode") == cfg.get("mode") \
+            and (not d or last.get("generated_at", "") >= d.get("generated_at", "")):
+        d = last
+    return d
+
+
+def get_today(day="today"):
+    date = day_date(day)
+    d = read_result(date)
     if not d:
-        return {"selections": [], "message": "Pas encore d'analyse. Appuie sur « Actualiser ».",
-                "date": today_paris(), "mode": engine.load_config().get("mode", "demo"),
+        return {"selections": [], "message": "Pas encore d'analyse. Appuie sur « Lancer l'analyse ».",
+                "date": date, "mode": engine.load_config().get("mode", "demo"),
                 "warnings": [], "disclaimer": engine.DISCLAIMER}
     return d
 
 
-def run_analysis(force=False, source=None, refire=False):
+def run_analysis(force=False, source=None, refire=False, day="today"):
     cfg = engine.load_config()
-    d = read_json(SEL_PATH, None)
+    d = read_result(day_date(day))
     if d and not force and cfg.get("mode") != "demo":
         age = now_utc().timestamp() - engine.parse_iso(d["generated_at"]).timestamp()
-        if age < 1800 and d.get("date") == today_paris() and d.get("mode") == cfg.get("mode"):
+        if age < 1800 and d.get("mode") == cfg.get("mode"):
             return dict(d, throttled=True)
     p = subprocess.run([sys.executable, os.path.join(BASE, "engine.py")], capture_output=True, text=True, timeout=420,
                        env=dict(os.environ, TESSBET_NO_NOTIFY="1", **({"TESSBET_SOURCE": source} if source else {}),
-                                **({"TESSBET_REFIRE": "1"} if refire else {})))
+                                **({"TESSBET_REFIRE": "1"} if refire else {}),
+                                **({"TESSBET_DAY": "tomorrow"} if day == "tomorrow" else {})))
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ["erreur inconnue"])[-1][:200]
         return {"error": f"L'analyse a échoué : {err}"}
-    return get_today()
+    return get_today(day)
 
 
 SETTINGS_PATH = os.path.join(DATA, "settings.json")
@@ -247,6 +267,7 @@ def get_settings():
     if not isinstance(hour, int) or not 0 <= hour <= 23:
         hour = int(engine.load_config().get("auto_run_hour", 9))
     return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour,
+            "horizon": 48 if s.get("horizon") == 48 else 24,  # 24 h = aujourd'hui, 48 h = aujourd'hui + demain
             "cap": get_cap_setting(), "asked": s.get("asked"),
             "source": engine.load_config().get("claude", {}).get("source", "api"),
             "routine": bool(os.environ.get("ROUTINE_ID") and os.environ.get("ROUTINE_TOKEN"))}
@@ -258,6 +279,10 @@ def set_settings(body):
         s["auto"] = bool(body["auto"])
     if "live" in body:
         s["live"] = bool(body["live"])
+    if "horizon" in body:
+        if body["horizon"] not in (24, 48):
+            return 400, {"error": "Choisis 24 h ou 48 h."}
+        s["horizon"] = body["horizon"]
     if "hour" in body:
         try:
             h = int(body["hour"])
@@ -286,7 +311,8 @@ def get_history(limit=60):
     folder = os.path.join(DATA, "history")
     days = []
     if os.path.isdir(folder):
-        for name in sorted(os.listdir(folder), reverse=True)[:limit]:
+        today = today_paris()
+        for name in [n for n in sorted(os.listdir(folder), reverse=True) if n[:10] <= today][:limit]:  # pas les jours à venir
             d = read_json(os.path.join(folder, name), None)
             if d:
                 days.append(d)
@@ -305,18 +331,17 @@ def ha_payload():
 
 
 def scheduler():
-    """Lance l'analyse chaque jour à l'heure choisie (et au démarrage si rien n'existe pour aujourd'hui)."""
-    last_run, tries, last_try, last_wait = None, {}, 0, 0
+    """Rappel du matin, réponse de Claude à récupérer, notification : pour aujourd'hui et pour demain."""
+    last_run, tries, last_try, last_wait = None, {}, {}, {}
     while True:
         try:
             cfg = engine.load_config()
             if not get_settings()["auto"]:
                 time.sleep(60)
                 continue
-            d = read_json(SEL_PATH, None)
             today = today_paris()
             hour = engine.to_paris(now_utc()).hour
-            stale = not d or d.get("date") != today or d.get("mode") != cfg.get("mode")
+            stale = not read_result(today)
             ready = hour >= get_settings()["hour"] or cfg.get("mode") == "demo"
             if stale and ready and last_run != today and cfg.get("mode") == "live":
                 last_run = today  # une seule demande par jour ; l'analyse ne part jamais sans ton accord
@@ -329,17 +354,19 @@ def scheduler():
                     s2 = read_json(SETTINGS_PATH, {})
                     s2["asked"] = today
                     engine.write_json(SETTINGS_PATH, s2)
-            d = read_json(SEL_PATH, None)
-            if d and d.get("waiting") and d.get("date") == today and time.time() - last_wait > 180:
-                last_wait = time.time()  # mode « tâche Claude » : on regarde si la réponse est arrivée
-                if engine.task_fetch_answer(engine.to_paris(now_utc()).date(), engine.load_env()):
-                    run_analysis(force=True)
-                d = read_json(SEL_PATH, None)
-            if (d and not d.get("waiting") and cfg.get("mode") == "live" and d.get("date") == today and tries.get(today, 0) < 6
-                    and (not d.get("notification") or str(d["notification"]).startswith(("notification impossible", "pas encore")))
-                    and time.time() - last_try > 300):
-                last_try, tries[today] = time.time(), tries.get(today, 0) + 1  # HA peut ne pas être prêt au démarrage
-                engine.notify_current()
+            for offset, day in ((0, "today"), (1, "tomorrow")):
+                date = day_date(day)
+                d = read_result(date)
+                if d and d.get("waiting") and time.time() - last_wait.get(date, 0) > 180:
+                    last_wait[date] = time.time()  # mode « tâche Claude » : on regarde si la réponse est arrivée
+                    if engine.task_fetch_answer(dt.date.fromisoformat(date), engine.load_env()):
+                        run_analysis(force=True, day=day)
+                    d = read_result(date)
+                if (d and not d.get("waiting") and cfg.get("mode") == "live" and tries.get(date, 0) < 6
+                        and (not d.get("notification") or str(d["notification"]).startswith(("notification impossible", "pas encore")))
+                        and time.time() - last_try.get(date, 0) > 300):
+                    last_try[date], tries[date] = time.time(), tries.get(date, 0) + 1  # HA peut ne pas être prêt au démarrage
+                    engine.notify_current(offset=offset)
         except Exception as e:  # le planificateur ne doit jamais s'arrêter
             print("planificateur :", e, file=sys.stderr)
         time.sleep(60)
@@ -377,7 +404,8 @@ class Handler(BaseHTTPRequestHandler):
                 with open(os.path.join(BASE, "web", "index.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html; charset=utf-8")
             if path == "/api/today":
-                return self._send(200, get_today())
+                q = parse_qs(urlparse(self.path).query)
+                return self._send(200, get_today("tomorrow" if q.get("day", [""])[0] == "tomorrow" else "today"))
             if path == "/api/stats":
                 return self._send(200, compute_stats(load_bets()))
             if path == "/api/bets":
@@ -406,8 +434,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(400, {"error": "Choisis d'abord comment lancer l'analyse (Claude ou API)."})
                 if src == "api" and not body.get("confirm"):
                     return self._send(400, {"error": "L'analyse par l'API coûte des crédits : confirmation nécessaire."})
-                res = run_analysis(force=bool(body.get("force")), source=src, refire=bool(body.get("refire")) and src == "claude_task")
-                return self._send(500 if "error" in res else 200, res)
+                res = run_analysis(force=bool(body.get("force")), source=src, refire=bool(body.get("refire")) and src == "claude_task",
+                                   day="tomorrow" if body.get("day") == "tomorrow" else "today")
+                return self._send(400 if "error" in res else 200, res)  # pas de 5xx : les proxys remplacent le message
             if path == "/api/bets":
                 return self._send(*add_bet(body))
             if path == "/api/settings":
