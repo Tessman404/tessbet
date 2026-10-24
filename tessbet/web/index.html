@@ -40,6 +40,7 @@ button { cursor: pointer; }
 header { margin-bottom: 14px; }
 header h1 { margin: 0; font: 700 2.6rem/1 var(--display); letter-spacing: .01em; color: #fff; }
 header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
+.summary:empty { display: none; }
 .summary { margin: 8px 0 18px; font-size: 1.05rem; color: var(--chalk); max-width: 60ch; }
 .banner {
   margin: 16px 0 0; padding: 10px 12px; border: 1.5px dashed var(--yellow); border-radius: 10px;
@@ -216,6 +217,59 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .analyse h3 { margin:0 0 8px; font:700 1rem var(--display); }
 .analyse p { margin:0 0 9px; line-height:1.45; font-size:.93rem; color:var(--ink); }
 .analyse p:last-child { margin-bottom:0; }
+
+/* ---- poste de commande : l'analyse du jour, en haut d'Aujourd'hui ---- */
+.cmd { position: relative; margin: 0 0 20px; background: var(--turf-2); border-radius: 16px; overflow: hidden; box-shadow: 0 10px 24px rgba(0,0,0,.2); }
+.cmd .main { display: flex; align-items: center; justify-content: space-between; gap: 14px 20px; flex-wrap: wrap; padding: 18px 18px 16px; }
+.cmd .state { display: flex; gap: 12px; align-items: flex-start; flex: 1 1 280px; min-width: 0; }
+.cmd .dot { flex: none; width: 12px; height: 12px; margin-top: 8px; border-radius: 50%; background: var(--chalk-dim); }
+.cmd .dot.run { background: var(--yellow); animation: pulse 1.6s ease-in-out infinite; }
+.cmd .dot.ok { background: var(--green); }
+.cmd .dot.err { background: var(--red); }
+.cmd h2 { margin: 0; font: 700 1.35rem/1.2 var(--display); color: #fff; }
+.cmd .sub { margin: 4px 0 0; font-size: .92rem; color: var(--chalk-dim); max-width: 56ch; }
+.cmd .sub.err { color: #ff9a9c; }
+.cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex: none; min-height: 50px; padding: 0 24px;
+  border: 0; border-radius: 12px; background: var(--yellow); color: var(--ink); font: 700 1.02rem var(--text); white-space: nowrap;
+  box-shadow: 0 2px 0 rgba(0,0,0,.28), 0 10px 20px rgba(0,0,0,.22); transition: transform .12s, background .12s;
+}
+.cta:hover { background: #ffdc66; }
+.cta:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,.28); }
+.cta .ico, .cta svg { display: block; width: 20px; height: 20px; flex: none; }
+.cta.ghost { background: transparent; color: var(--chalk); border: 1.5px solid var(--chalk-dim); box-shadow: none; }
+.cta.ghost:hover { background: var(--turf-3); color: #fff; }
+.cta:disabled { opacity: .65; cursor: default; }
+.cta .spin { animation: spin 1s linear infinite; }
+.cmd .bar { height: 3px; background: var(--turf-3); overflow: hidden; }
+.cmd .bar i { display: block; width: 35%; height: 100%; background: var(--yellow); animation: slide 1.8s ease-in-out infinite; }
+.cmd .more { padding: 0 18px 14px 42px; }
+.cmd .more summary { display: inline-block; padding: 2px 0; color: var(--chalk-dim); font-size: .85rem; font-weight: 600; }
+.cmd .more summary:hover { color: #fff; }
+.cmd .more p { margin: 6px 0 10px; font-size: .85rem; color: var(--chalk-dim); max-width: 56ch; }
+.btn.copy { white-space: normal; text-align: left; }
+.rail { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
+.rail li + li { border-left: 1px solid var(--turf-3); }
+.rail button { display: flex; align-items: center; gap: 10px; width: 100%; height: 100%; padding: 12px 14px; text-align: left; background: transparent; border: 0; color: var(--chalk-dim); }
+.rail button:hover { background: var(--turf-3); }
+.rail .n { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid currentColor; font: 700 .9rem/1 var(--display); }
+.rail .n svg { width: 15px; height: 15px; }
+.rail li.done .n { background: var(--green); border-color: var(--green); color: var(--ink); }
+.rail li.now { color: #fff; }
+.rail li.now .n { background: var(--yellow); border-color: var(--yellow); color: var(--ink); }
+.rail li.skip { opacity: .6; }
+.rail b { display: block; font-size: .95rem; line-height: 1.2; color: inherit; }
+.rail small { display: block; margin-top: 1px; font-size: .8rem; line-height: 1.25; color: var(--chalk-dim); }
+.tech { margin: 20px 0 0; }
+.tech summary { color: var(--chalk-dim); font-size: .85rem; }
+.tech ul { margin: 6px 0 0; padding-left: 18px; color: var(--chalk-dim); font-size: .85rem; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+@media (max-width: 640px) {
+  .cmd .cta { width: 100%; }
+  .rail button { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 11px 11px; }
+}
 </style>
 </head>
 <body>
@@ -240,10 +294,10 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
   <section id="tab-today">
     <div class="pagehead"><h1>Aujourd'hui</h1><p class="date" id="date"></p></div>
     <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
+    <div class="cmd" id="cmd" aria-label="Analyse du jour"></div>
     <p class="summary" id="summary"></p>
     <div id="tickets" class="cols"></div>
-    <p class="warn" id="warnings"></p>
-    <div id="launcher" class="panel"></div>
+    <details class="tech" id="tech" hidden><summary id="techsum"></summary><ul id="warnings"></ul></details>
     <p class="note" id="disclaimer"></p>
   </section>
 
@@ -272,7 +326,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 
 <script>
 const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾' };
-const state = { today: null, stats: null, bets: [] };
+const state = { today: null, stats: null, bets: [], settings: null, busy: false };
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -411,24 +465,129 @@ async function saveBet(s, stakeValue, oddsValue, book, force) {
   }
 }
 
+const parisToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+const ICONS = {
+  scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.9-4.9"/><path d="m8 10.5 2 2 3.5-4"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
+  spin: '<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
+};
+function icon(name) { const n = document.createElement('span'); n.className = 'ico'; n.innerHTML = ICONS[name]; return n; }
+function hhmm(iso) { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
+const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
+
+/* Où en est la journée : à lancer (todo), Claude travaille (waiting) ou terminée (done). */
+function dayInfo() {
+  const d = state.today || {}, st = state.settings || { source: 'api' };
+  const fresh = !!d.generated_at && d.date === parisToday();  // une analyse d'hier ne compte pas pour aujourd'hui
+  const kind = !fresh ? 'todo' : d.waiting ? 'waiting' : 'done';
+  const fire = (fresh && d.fire) || {};
+  const since = kind === 'waiting' ? (fire.fired_at || d.generated_at) : null;
+  return { kind, fresh, d, source: st.source, routine: st.routine !== false, fire,
+    waitMin: since ? (Date.now() - new Date(since).getTime()) / 60000 : 0,
+    picks: fresh ? (d.selections || []).length : 0 };
+}
+
+function cmdTexts(i) {
+  const claude = i.source === 'claude_task', f = i.fire;
+  if (i.kind === 'waiting') {
+    if (f.status === 'error') return { dot: 'err', title: 'Claude n\'a pas pu être réveillé', err: true, sub: f.error + '. Réessaie : rien n\'a été perdu.' };
+    if (f.status === 'manual' || !i.routine) return { dot: 'err', title: 'Réveil de Claude non réglé', err: true, sub: 'Colle le jeton de la tâche Claude dans la configuration de l\'application (Paramètres > Applications > Tessbet).' };
+    return { dot: 'run', title: 'Claude fait ses recherches',
+      sub: 'Lancé' + (f.fired_at ? ' à ' + hhmm(f.fired_at) : '') + '. Compte 10 à 20 minutes : le résultat s\'affiche ici tout seul.' };
+  }
+  if (i.kind === 'done') return { dot: 'ok', title: 'Analyse terminée',
+    sub: 'Faite à ' + hhmm(i.d.generated_at) + ' · ' + plural(i.d.matches_analysed || 0, 'match analysé', 'matchs analysés') + ' · les matchs de demain sont pris en compte dès minuit.' };
+  return { dot: 'idle', title: 'Analyse du jour',
+    sub: 'Pas encore lancée. Elle couvre les matchs d\'aujourd\'hui, jusqu\'à minuit' + (claude ? ', vérifiés par Claude sans frais d\'API.' : ' (utilise des crédits de l\'API).') };
+}
+
+function cmdAction(i) {
+  const claude = i.source === 'claude_task', f = i.fire;
+  if (!claude) return { label: i.kind === 'done' ? 'Actualiser (API, crédits)' : 'Lancer l\'analyse (API, crédits)', ico: i.kind === 'done' ? 'refresh' : 'scan', ghost: i.kind === 'done', run: () => launch('api') };
+  if (i.kind === 'waiting') {
+    if (f.status === 'error' || f.status === 'manual') return { label: 'Réessayer', ico: 'refresh', ghost: false, run: () => launch('claude_task', false) };
+    return i.waitMin >= 20
+      ? { label: 'Relancer Claude', ico: 'refresh', ghost: false, run: () => launch('claude_task', true) }
+      : { label: 'Revérifier la réponse', ico: 'refresh', ghost: true, run: () => launch('claude_task', false) };
+  }
+  if (i.kind === 'done') return { label: 'Actualiser l\'analyse', ico: 'refresh', ghost: true, run: () => launch('claude_task', false) };
+  return { label: 'Lancer l\'analyse', ico: 'scan', ghost: false, run: () => launch('claude_task', false) };
+}
+
+/* La journée en trois temps : analyser, enregistrer ses paris, les suivre en direct. */
+function railSteps(i) {
+  const today = i.d.date, mine = state.bets.filter(b => b.date === today).length;
+  const pending = state.bets.filter(b => b.result === 'pending').length;
+  const s1 = i.kind === 'done' ? { st: 'done', sub: i.picks ? plural(i.picks, 'pari retenu', 'paris retenus') : 'Aucun pari solide' }
+    : i.kind === 'waiting' ? { st: 'now', sub: ['error', 'manual'].includes(i.fire.status) ? 'Réveil à relancer' : 'Claude travaille' } : { st: 'now', sub: 'À lancer' };
+  let s2, s3;
+  if (i.kind !== 'done') { s2 = { st: 'todo', sub: 'Après l\'analyse' }; s3 = { st: 'todo', sub: pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours' }; }
+  else if (!i.picks) { s2 = { st: 'skip', sub: 'Rien à enregistrer' }; s3 = { st: 'skip', sub: pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours' }; }
+  else {
+    s2 = mine ? { st: 'done', sub: plural(mine, 'pari enregistré', 'paris enregistrés') } : { st: 'now', sub: 'À enregistrer ci-dessous' };
+    s3 = { st: mine ? 'now' : 'todo', sub: pending ? plural(pending, 'pari en cours', 'paris en cours') : 'Aucun pari en cours' };
+  }
+  return [
+    { n: 1, label: 'Analyse', tab: 'today', ...s1 },
+    { n: 2, label: 'Mes paris', tab: 'track', ...s2 },
+    { n: 3, label: 'En direct', tab: 'live', ...s3 }];
+}
+
+function renderCmd() {
+  const box = document.getElementById('cmd');
+  if (!state.today) return;
+  const i = dayInfo(), t = cmdTexts(i), a = cmdAction(i);
+  box.replaceChildren();
+  const btn = el('button', { class: 'cta' + (a.ghost && !state.busy ? ' ghost' : ''), type: 'button', disabled: state.busy, onclick: a.run },
+    icon(state.busy ? 'spin' : a.ico), el('span', { text: state.busy ? 'Analyse en cours…' : a.label }));
+  box.append(el('div', { class: 'main' },
+    el('div', { class: 'state' }, el('span', { class: 'dot ' + t.dot, 'aria-hidden': 'true' }),
+      el('div', {}, el('h2', { text: t.title }), el('p', { class: 'sub' + (t.err ? ' err' : ''), role: t.err ? 'alert' : null, text: t.sub }))),
+    btn));
+  if (i.source === 'claude_task' && i.kind === 'waiting') {  // la voie payante reste possible, mais discrète
+    box.append(el('details', { class: 'more' }, el('summary', { text: 'Claude ne répond pas ? Autres options' }),
+      el('p', { text: 'L\'API Anthropic peut faire l\'analyse tout de suite, mais elle consomme des crédits de ta clé.' }),
+      el('button', { class: 'btn small ghost', type: 'button', disabled: state.busy, text: 'Analyser avec l\'API (crédits)', onclick: () => launch('api') })));
+  }
+  if (i.kind === 'waiting' && t.dot === 'run') box.append(el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i')));
+  box.append(el('ol', { class: 'rail', 'aria-label': 'Ta journée' }, railSteps(i).map(s =>
+    el('li', { class: s.st }, el('button', { type: 'button', 'aria-current': s.st === 'now' ? 'step' : null,
+        onclick: () => s.tab === 'today' ? window.scrollTo({ top: document.getElementById('tickets').offsetTop - 80, behavior: 'smooth' }) : showTab(s.tab) },
+      el('span', { class: 'n' }, s.st === 'done' ? icon('check') : String(s.n)),
+      el('span', {}, el('b', { text: s.label }), el('small', { text: s.sub })))))));
+}
+
 function renderToday() {
   const d = state.today;
   if (!d) return;
-  const day = new Date(d.date + 'T12:00:00');
+  const i = dayInfo();
+  const day = new Date((i.fresh ? d.date : parisToday()) + 'T12:00:00');
   document.getElementById('date').textContent = day.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   document.getElementById('demo-banner').hidden = d.mode !== 'demo';
-  document.getElementById('summary').textContent = d.message || '';
+  document.getElementById('summary').textContent = i.kind === 'done' && d.selections.length ? (d.message || '') : '';
   const box = document.getElementById('tickets');
   box.replaceChildren();
-  if (!d.selections.length) {
+  if (i.kind === 'todo') {
+    const last = d.generated_at ? new Date(d.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : null;
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Pas encore d\'analyse aujourd\'hui' }),
+      el('p', { text: 'Appuie sur « Lancer l\'analyse » : Tessbet cherche les paris solides parmi les matchs du jour.' + (last ? ' La dernière date de ' + last + ' : tu la retrouves dans « Passés ».' : '') })));
+  } else if (i.kind === 'waiting') {
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Les paris arrivent' }),
+      el('p', { text: 'Tu n\'as rien à faire : dès que Claude a fini ses vérifications, les paris retenus s\'affichent ici.' })));
+  } else if (!d.selections.length) {
     box.append(el('div', { class: 'empty' },
       el('h2', { text: 'Pas de pari aujourd\'hui' }),
-      el('p', { text: 'Aucun match ne remplit les critères de solidité. Passer son tour fait partie du jeu : repasse demain matin.' })));
+      el('p', { text: (d.message || 'Aucun match ne remplit les critères de solidité.') + ' Repasse demain.' })));
   } else {
     d.selections.forEach(s => box.append(ticket(s)));
   }
-  renderLauncher();
-  document.getElementById('warnings').textContent = (d.warnings || []).length ? 'À noter : ' + d.warnings.slice(0, 3).join(' ; ') : '';
+  renderCmd();
+  const w = i.fresh ? (d.warnings || []) : [];
+  const tech = document.getElementById('tech');
+  tech.hidden = !w.length;
+  document.getElementById('techsum').textContent = 'Infos techniques (' + w.length + ')';
+  document.getElementById('warnings').replaceChildren(...w.map(x => el('li', { text: x })));
   document.getElementById('disclaimer').textContent = d.disclaimer || '';
 }
 
@@ -615,7 +774,7 @@ function renderSettings(st) {
     el('div', {},
       el('div', { class: 'panel' }, el('h2', { text: 'Claude' }),
         el('p', { class: 'note', text: st.source !== 'claude_task' ? 'Mode actuel : API (crédits). Passe l\'application en « claude_task » pour que Claude fasse les recherches sans frais d\'API.'
-          : st.routine ? 'Réveil automatique de Claude réglé : le bouton « Demander à Claude » le lance sans passer par le chat.'
+          : st.routine ? 'Réveil automatique de Claude réglé : le bouton « Lancer l\'analyse » de l\'écran Aujourd\'hui le lance sans passer par le chat.'
           : 'Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.' }),
         st.source === 'claude_task' && st.routine ? claudeBtn : '',
         st.source === 'claude_task' && st.routine ? el('p', { class: 'note', text: 'Le test lance une très courte session Claude, sans recherche ni crédit de cotes.' }) : ''),
@@ -639,20 +798,21 @@ function renderSettings(st) {
 async function loadToday() { state.today = await api('today'); }
 async function loadStats() { state.stats = await api('stats'); }
 async function loadBets() { state.bets = (await api('bets')).bets; }
+async function loadSettings() { try { state.settings = await api('settings'); } catch (_) { state.settings = state.settings || { source: 'api' }; } }
 
 async function launch(source, refire) {
+  if (state.busy) return;
   if (source === 'api' && !confirm('L\'analyse par l\'API coûte des crédits sur ta clé Anthropic. Lancer quand même ?')) return;
-  const btns = document.querySelectorAll('#launcher button'); btns.forEach(x => x.disabled = true);
+  state.busy = true; renderCmd();
   try {
     state.today = await api('refresh', 'POST', { force: true, source, confirm: source === 'api', refire: !!refire });
-    renderToday();
+    state.busy = false; renderToday();
     const f = state.today.fire || {};
     if (!state.today.waiting) toast('Analyse mise à jour.');
     else if (f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
     else if (f.status === 'manual') toast('Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.', true);
     else toast('Claude est prévenu. Le résultat arrivera ici tout seul.');
-  } catch (err) { toast(err.message, true); }
-  renderLauncher();
+  } catch (err) { state.busy = false; renderCmd(); toast(err.message, true); }
   watchWaiting();
 }
 let waitTimer = null;
@@ -662,37 +822,11 @@ function watchWaiting() {
   waitTimer = setInterval(async () => {  // pendant que Claude travaille, on regarde si la réponse est arrivée
     try {
       const d = await api('today');
-      if (d.waiting && d.date === state.today.date) return;
+      if (d.waiting && d.date === state.today.date) { renderCmd(); return; }  // rafraîchit le compteur de temps
       state.today = d; renderToday(); clearInterval(waitTimer); waitTimer = null;
       toast('Claude a répondu : analyse du jour à jour.');
     } catch (_) {}
   }, 30000);
-}
-function hhmm(iso) { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
-async function renderLauncher() {
-  const box = document.getElementById('launcher');
-  let st = { source: 'api' }; try { st = await api('settings'); } catch (_) {}
-  box.replaceChildren();
-  const d = state.today || {};
-  const waitMin = d.waiting && d.generated_at ? (Date.now() - new Date(d.generated_at).getTime()) / 60000 : 0;
-  box.append(el('h2', { text: 'Analyse du jour' }),
-    el('p', { class: 'note', text: 'Rien ne se lance sans ton accord. Tu peux le faire à toute heure, même après minuit.' }));
-  if (st.source === 'claude_task') {
-    const f = d.fire || {};
-    box.append(el('button', { class: 'btn small', type: 'button', text: d.waiting ? (waitMin < 20 ? 'Revérifier la réponse de Claude' : 'Relancer Claude') : 'Demander à Claude (sans frais d\'API)',
-      onclick: () => launch('claude_task', d.waiting && waitMin >= 20) }));
-    if (d.waiting) {
-      let msg;
-      if (f.status === 'error') msg = 'Claude n\'a pas pu être réveillé : ' + f.error + '. Tu peux réessayer avec « Relancer Claude » (après 20 min) ou en revérifiant.';
-      else if (f.status === 'manual' || !st.routine) msg = 'Le réveil automatique n\'est pas réglé : colle le jeton de la tâche Claude dans les réglages de l\'application (Paramètres > Applications > Tessbet > Configuration).';
-      else msg = 'Claude travaille' + (f.fired_at ? ' (lancé à ' + hhmm(f.fired_at) + ')' : '') + ' : le résultat s\'affichera ici tout seul, compte 10 à 20 minutes.';
-      box.append(el('p', { class: 'note', text: msg }));
-      if (waitMin >= 20) box.append(el('p', { class: 'note', text: 'Ça dure ? Tu peux relancer Claude, ou utiliser l\'API (elle coûte des crédits).' }),
-        el('button', { class: 'btn small', type: 'button', text: 'Claude indisponible : utiliser l\'API (crédits)', onclick: () => launch('api') }));
-    }
-  } else {
-    box.append(el('button', { class: 'btn small', type: 'button', text: 'Lancer l\'analyse avec l\'API (crédits)', onclick: () => launch('api') }));
-  }
 }
 
 async function showTab(t) {
@@ -703,7 +837,8 @@ async function showTab(t) {
   try {
     if (t === 'past') renderPast((await api('history')).days);
     if (t === 'track') { await Promise.all([loadStats(), loadBets()]); renderTrack(); }
-    if (t === 'settings') { await Promise.all([loadStats(), loadToday()]); renderSettings(await api('settings')); }
+    if (t === 'settings') { await Promise.all([loadStats(), loadToday(), loadSettings()]); renderSettings(state.settings); }
+    if (t === 'today') { await Promise.all([loadToday(), loadBets(), loadSettings()]); renderToday(); watchWaiting(); }
     if (t === 'live') { await renderLive(); liveTimer = setInterval(renderLive, 20000); }
   } catch (e) { toast(e.message, true); }
   window.scrollTo(0, 0);
@@ -711,7 +846,7 @@ async function showTab(t) {
 document.querySelectorAll('.topbar nav button').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
 (async () => {
-  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack(); watchWaiting(); }
+  try { await Promise.all([loadToday(), loadStats(), loadBets(), loadSettings()]); renderToday(); renderTrack(); watchWaiting(); }
   catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
 })();
 </script>
