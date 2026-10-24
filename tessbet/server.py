@@ -150,6 +150,33 @@ def set_result(bet_id, result):
     return 404, {"error": "Pari introuvable."}
 
 
+def update_bet(bet_id, body):
+    """Corrige la cote et/ou la mise d'un pari ; le compte du bookmaker suit."""
+    with LOCK:
+        d = load_bets()
+        for b in d["bets"]:
+            if b["id"] != bet_id:
+                continue
+            try:
+                odds = float(body.get("odds", b["odds"]))
+                stake = float(body.get("stake", b["stake"]))
+            except (TypeError, ValueError):
+                return 400, {"error": "Cote ou mise invalide."}
+            if odds <= 1 or stake <= 0:
+                return 400, {"error": "La cote doit dépasser 1 et la mise être positive."}
+            new = dict(b, odds=round(odds, 2), stake=round(stake, 2))
+            w = d.get("wallets") or {}
+            if b.get("book") in w:
+                delta = (-new["stake"] + returned(new)) - (-b["stake"] + returned(b))
+                if w[b["book"]] + delta < -1e-9:
+                    return 400, {"error": f"Pas assez d'argent sur ton compte {BOOK_NAMES.get(b['book'], b['book'])}."}
+                w[b["book"]] = round(w[b["book"]] + delta, 2)
+            b.update(odds=new["odds"], stake=new["stake"])
+            engine.write_json(BETS_PATH, d)
+            return 200, {"bet": b}
+    return 404, {"error": "Pari introuvable."}
+
+
 def delete_bet(bet_id):
     with LOCK:
         d = load_bets()
@@ -368,6 +395,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(*set_bankroll(body))
             if path == "/api/wallets":
                 return self._send(*set_wallet(body))
+            if path.startswith("/api/bets/") and path.count("/") == 3:
+                return self._send(*update_bet(path.split("/")[3], body))
             if path.startswith("/api/bets/") and path.endswith("/result"):
                 return self._send(*set_result(path.split("/")[3], body.get("result")))
         elif method == "DELETE" and path.startswith("/api/bets/"):

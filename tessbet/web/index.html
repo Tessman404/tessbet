@@ -25,21 +25,22 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; min-height: 100vh; background: var(--turf); color: var(--chalk);
-  font: 16px/1.5 var(--text); padding-bottom: 88px;
+  font: 16px/1.5 var(--text); padding-bottom: 32px;
 }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
+input, select { color: var(--ink); background: #fff; }
 button { cursor: pointer; }
 :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
 
 /* Cercle central tracé à la craie : le seul décor de la page */
 .pitch-mark { position: absolute; inset: 0 0 auto 0; height: 360px; overflow: hidden; pointer-events: none; }
 .pitch-mark svg { position: absolute; right: -90px; top: -70px; width: 330px; opacity: .09; }
-.wrap { position: relative; max-width: 560px; margin: 0 auto; padding: 28px 18px 0; }
+.wrap { position: relative; max-width: 1080px; margin: 0 auto; padding: 18px 18px 0; }
 
 header { margin-bottom: 14px; }
 header h1 { margin: 0; font: 700 2.6rem/1 var(--display); letter-spacing: .01em; color: #fff; }
 header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
-.summary { margin: 18px 0 22px; font-size: 1.05rem; color: var(--chalk); max-width: 34ch; }
+.summary { margin: 8px 0 18px; font-size: 1.05rem; color: var(--chalk); max-width: 60ch; }
 .banner {
   margin: 16px 0 0; padding: 10px 12px; border: 1.5px dashed var(--yellow); border-radius: 10px;
   color: var(--yellow); font-size: .9rem;
@@ -101,7 +102,7 @@ details li { margin: 4px 0; }
 .btn.ghost { background: transparent; border: 1.5px solid currentColor; }
 .btn.small { padding: 6px 10px; min-height: 34px; font-size: .88rem; }
 .btn:disabled { opacity: .5; cursor: default; }
-.betform { display: none; margin-top: 12px; gap: 8px; align-items: center; flex-wrap: wrap; }
+.betform { display: flex; margin-top: 12px; gap: 8px; align-items: center; flex-wrap: wrap; }
 .betform.open { display: flex; }
 .betform input {
   width: 84px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--ink-2);
@@ -142,29 +143,50 @@ h2.section { margin: 26px 0 10px; font: 700 1.35rem/1.2 var(--display); color: #
 .btn.lose { background: var(--red); color: #fff; }
 .btn.void, .btn.del { background: transparent; border: 1.5px solid var(--chalk-dim); color: var(--chalk); }
 .settings { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.settings input { width: 120px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--chalk-dim); background: var(--turf-2); color: #fff; }
+.settings input { width: 120px; min-height: 38px; padding: 8px 10px; border-radius: 8px; border: 1px solid #b9c8bf; background: #fff; color: var(--ink); }
 .settings .btn { background: var(--chalk); color: var(--ink); }
 
-/* ---- navigation basse ---- */
-nav {
-  position: fixed; left: 0; right: 0; bottom: 0; background: var(--turf-2); border-top: 1px solid var(--turf-3);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-nav div { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; }
-nav button { background: transparent; border: 0; padding: 14px 8px 12px; color: var(--chalk-dim); font-weight: 600; border-top: 3px solid transparent; }
-nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); }
-
+/* ---- barre du haut ---- */
+.topbar { position: sticky; top: 0; z-index: 5; background: var(--turf-2); border-bottom: 1px solid var(--turf-3); padding-top: env(safe-area-inset-top); }
+.topbar .in { max-width: 1080px; margin: 0 auto; padding: 0 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.brand { font: 700 1.5rem/1 var(--display); color: #fff; padding: 12px 0; }
+.topbar nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; scrollbar-width: none; }
+.topbar nav button { background: transparent; border: 0; padding: 14px 14px 11px; color: var(--chalk-dim); font-weight: 600; white-space: nowrap; border-bottom: 3px solid transparent; }
+.topbar nav button:hover { color: #fff; }
+.topbar nav button[aria-current="page"] { color: #fff; border-bottom-color: var(--yellow); }
+.pagehead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.pagehead h1 { margin: 0; font: 700 1.9rem/1.1 var(--display); color: #fff; }
+.pagehead .date { margin: 0; color: var(--chalk-dim); text-transform: capitalize; }
+.cols { display: grid; grid-template-columns: 1fr; gap: 0 20px; align-items: start; }
+@media (min-width: 900px) { .cols { grid-template-columns: 1fr 1fr; } .cols.three { grid-template-columns: 1fr 1fr 1fr; } }
+.panel { background: var(--turf-2); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+.panel h2 { margin: 0 0 10px; font: 700 1.2rem/1.2 var(--display); color: #fff; }
+.panel .autobox { margin-bottom: 10px; }
+.panel .wallet b { min-width: 110px; }
+.livecard { background: var(--turf-2); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+.livecard .lt { display: flex; justify-content: space-between; color: var(--chalk-dim); font-size: .88rem; }
+.livecard .teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 8px 0; }
+.livecard .teams span { font-weight: 600; overflow-wrap: anywhere; }
+.livecard .teams span:last-child { text-align: right; }
+.livecard .score { font: 700 2.3rem/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.livecard .dot { color: #ff5a5f; font-weight: 700; }
+.livecard .mine { color: var(--chalk); font-size: .9rem; }
+.edit { display: none; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.edit.open { display: flex; }
+.edit input { width: 90px; min-height: 38px; border-radius: 8px; border: 1px solid #b9c8bf; padding: 0 8px; }
+.edit label { font-size: .88rem; color: var(--chalk-dim); }
 .toast {
-  position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); max-width: 90vw;
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: 90vw;
   background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: .92rem;
   box-shadow: 0 6px 18px rgba(0,0,0,.4); z-index: 10;
 }
 .toast.err { background: var(--red); }
 [hidden] { display: none !important; }
 @media (max-width: 380px) { .ticket { grid-template-columns: 1fr 96px; } .odds { font-size: 2.3rem; } }
+@media (max-width: 600px) { .brand { width: 100%; padding: 10px 0 0; } .topbar .in { gap: 0; } .topbar nav { width: 100%; flex: none; } .topbar nav button { padding: 10px 12px 9px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 .autobox { display:flex; align-items:center; gap:10px; margin:0 0 14px; color:#fff; font-size:.95rem; }
-.autobox select { min-height:34px; border-radius:8px; padding:0 6px; }
+.autobox select { min-height:34px; border-radius:8px; padding:0 6px; background:#fff; color:var(--ink); }
 .autobox input { width:22px; height:22px; accent-color:#ffd23f; }
 .offers { margin:10px 0 0; font-size:.82rem; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .offers a { text-decoration:none; color:inherit; padding:2px 8px; border:1px solid #c5d3cb; border-radius:99px; }
@@ -175,9 +197,10 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
 .betform select { min-height:36px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; background:#fff; color:var(--ink); }
 .wallet { display:flex; align-items:center; gap:8px; margin:8px 0; color:#fff; flex-wrap:wrap; }
 .wallet b { min-width:92px; }
-.wallet input { width:96px; min-height:38px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; }
+.wallet input, .wallet select { min-height:38px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; background:#fff; color:var(--ink); }
+.wallet input { width:110px; }
 .copy { margin-top:10px; }
-.analyse { margin:10px 0 4px; padding:12px 14px; background:#fff; border-radius:10px; border:1px solid #d5e0da; }
+.analyse { margin:8px 0 4px; padding:12px 14px; background:#fff; border-radius:10px; border:1px solid #d5e0da; }
 .analyse h3 { margin:0 0 8px; font:700 1rem var(--display); }
 .analyse p { margin:0 0 9px; line-height:1.45; font-size:.93rem; color:var(--ink); }
 .analyse p:last-child { margin-bottom:0; }
@@ -190,43 +213,49 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
   </svg>
 </div>
 
+<div class="topbar"><div class="in">
+  <span class="brand">Tessbet</span>
+  <nav aria-label="Navigation">
+    <button type="button" data-tab="today" aria-current="page">Aujourd'hui</button>
+    <button type="button" data-tab="live">En direct</button>
+    <button type="button" data-tab="past">Passés</button>
+    <button type="button" data-tab="track">Mes mises</button>
+    <button type="button" data-tab="settings">Réglages</button>
+  </nav>
+</div></div>
+
 <main class="wrap">
   <section id="tab-today">
-    <header>
-      <h1>Tessbet</h1>
-      <p class="date" id="date"></p>
-    </header>
+    <div class="pagehead"><h1>Aujourd'hui</h1><p class="date" id="date"></p></div>
     <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
-    <label class="autobox"><input type="checkbox" id="auto"><span>Analyse automatique chaque matin, vers</span>
-      <select id="hour" aria-label="Heure de l'analyse"></select></label>
-    <label class="autobox"><input type="checkbox" id="live"><span>Notifications en direct (buts, mi-temps, résultat) pour mes paris</span></label>
     <p class="summary" id="summary"></p>
-    <div id="tickets"></div>
+    <div id="tickets" class="cols"></div>
     <p class="warn" id="warnings"></p>
     <button class="btn refresh" id="refresh" type="button">Actualiser l'analyse</button>
-    <button class="btn refresh" id="notify" type="button">Envoyer sur mon iPhone</button>
-    <p class="note" id="notifstatus"></p>
     <p class="note" id="disclaimer"></p>
   </section>
 
+  <section id="tab-live" hidden>
+    <div class="pagehead"><h1>En direct</h1><p class="date" id="livestamp"></p></div>
+    <div id="live-box" class="cols"></div>
+  </section>
+
   <section id="tab-past" hidden>
-    <header><h1>Passés</h1></header>
+    <div class="pagehead"><h1>Passés</h1></div>
     <div id="past"></div>
   </section>
 
   <section id="tab-track" hidden>
-    <header><h1>Mes mises</h1></header>
+    <div class="pagehead"><h1>Mes mises</h1></div>
     <div id="track"></div>
+  </section>
+
+  <section id="tab-settings" hidden>
+    <div class="pagehead"><h1>Réglages</h1></div>
+    <div id="settings-box" class="cols"></div>
   </section>
 </main>
 
-<nav aria-label="Navigation">
-  <div>
-    <button type="button" data-tab="today" aria-current="page">Aujourd'hui</button>
-    <button type="button" data-tab="past">Passés</button>
-    <button type="button" data-tab="track">Mes mises</button>
-  </div>
-</nav>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script>
@@ -316,7 +345,7 @@ function ticket(s) {
     wallets.length ? [el('label', { for: 'book-' + s.id, text: 'Site' }), bookSel] : null,
     el('label', { for: 'odds-' + s.id, text: 'Cote réelle' }), oddsInput,
     el('label', { for: 'stake-' + s.id, text: 'Mise (€)' }), input,
-    el('button', { class: 'btn small', type: 'button', text: 'Enregistrer',
+    el('button', { class: 'btn small', type: 'button', text: 'J\'ai parié',
       onclick: () => saveBet(s, input.value, oddsInput.value, wallets.length ? bookSel.value : '', false) }));
   const linkOf = o => safeUrl(o.link) || HOMES[baseOf(o.key)] || null;
   const offerChips = (s.offers || []).length ? el('p', { class: 'offers' }, 'Cotes : ',
@@ -326,7 +355,6 @@ function ticket(s) {
   const target = bestMine ? (s.offers || []).find(o => baseOf(o.key) === bestMine.key) : (s.offers || [])[0];
   const betLink = target && linkOf(target) ? el('a', { class: 'btn small betlink', href: linkOf(target), target: '_blank', rel: 'noopener noreferrer',
     text: `Parier chez ${target.book} →` }) : null;
-  const toggle = el('button', { class: 'btn', type: 'button', text: 'J\'ai parié', onclick: () => form.classList.toggle('open') });
 
   const marks = [25, 50, 75].map(m => el('b', { style: `left:${m}%` }));
   const cl = s.claude;
@@ -342,9 +370,8 @@ function ticket(s) {
     });
     details.push(el('li', {}, 'Sources : ', links));
   }
-  const analyse = cl && cl.analyse ? el('div', { class: 'analyse' },
-    el('h3', { text: 'Analyse de Claude' }),
-    cl.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() }))) : null;
+  const analyse = cl && cl.analyse ? el('details', {}, el('summary', { text: 'Lire l\'analyse complète de Claude' }),
+    el('div', { class: 'analyse' }, cl.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() })))) : null;
   return el('article', { class: 'ticket' },
     el('div', { class: 'body' },
       el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: s.kickoff_local })),
@@ -364,8 +391,7 @@ function ticket(s) {
         onclick: async () => toast((await copyText(shareText(s))) ? 'Analyse copiée : colle-la dans ta conversation.' : 'Copie impossible sur cet appareil.', false) }),
       el('details', {}, el('summary', { text: 'Pourquoi ce pari ?' }), el('ul', {}, details)),
       el('div', { class: 'actions' },
-        el('span', { class: 'stake' }, 'Mise conseillée ', el('b', { text: eur(suggested) })),
-        toggle),
+        el('span', { class: 'stake' }, 'Mise conseillée ', el('b', { text: eur(suggested) }), ' – modifie la cote ou la mise si besoin')),
       form),
     el('div', { class: 'stub' }, el('span', { class: 'odds', text: odds(s.odds) }), el('small', { text: s.bookmaker })));
 }
@@ -399,7 +425,6 @@ function renderToday() {
   }
   document.getElementById('warnings').textContent = (d.warnings || []).length ? 'À noter : ' + d.warnings.slice(0, 3).join(' ; ') : '';
   document.getElementById('disclaimer').textContent = d.disclaimer || '';
-  document.getElementById('notifstatus').textContent = d.notification ? 'iPhone : ' + d.notification : '';
 }
 
 /* ---------------- Mes mises ---------------- */
@@ -416,6 +441,14 @@ function betRow(b) {
   } else {
     btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Remettre en cours', onclick: setRes('pending') }));
   }
+  const eo = el('input', { type: 'number', min: '1.01', step: '0.01', value: String(b.odds), inputmode: 'decimal', 'aria-label': 'Cote' });
+  const es = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(b.stake), inputmode: 'decimal', 'aria-label': 'Mise' });
+  const edit = el('div', { class: 'edit' }, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es,
+    el('button', { class: 'btn small', type: 'button', text: 'Valider', onclick: async () => {
+      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value) }); await loadStats(); await loadBets(); renderTrack(); toast('Pari modifié.'); }
+      catch (e) { toast(e.message, true); }
+    } }));
+  btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Modifier cote / mise', onclick: () => edit.classList.toggle('open') }));
   btns.append(el('button', { class: 'btn small del', type: 'button', text: 'Supprimer', onclick: async () => {
     if (!confirm('Supprimer ce pari de l\'historique ?')) return;
     try { await api('bets/' + b.id, 'DELETE'); await loadStats(); await loadBets(); renderTrack(); } catch (e) { toast(e.message, true); }
@@ -424,12 +457,12 @@ function betRow(b) {
     el('div', { class: 'top' },
       el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + b.book : '') + (b.live ? (b.live.state === 'in' ? ` – 🔴 en direct ${b.live.score[0]}-${b.live.score[1]} (${b.live.clock})` : b.live.state === 'post' ? ` – terminé ${b.live.score[0]}-${b.live.score[1]}` : '') : '') })),
       res),
-    btns);
+    btns, edit);
 }
 
 function walletRows(s) {
   const save = async (key, input) => {
-    try { await api('wallets', 'POST', { key, balance: Number(input.value) }); await loadStats(); renderTrack(); renderToday(); toast('Solde enregistré.'); }
+    try { await api('wallets', 'POST', { key, balance: Number(input.value) }); await loadStats(); renderTrack(); renderToday(); if (!document.getElementById('tab-settings').hidden) renderSettings(await api('settings')); toast('Solde enregistré.'); }
     catch (e) { toast(e.message, true); }
   };
   const row = w => {
@@ -454,7 +487,6 @@ function renderTrack() {
   const box = document.getElementById('track'); box.replaceChildren();
   const over = s.staked_today > s.daily_cap;
   const used = s.daily_cap ? Math.min(100, (s.staked_today / s.daily_cap) * 100) : 0;
-  const input = el('input', { type: 'number', min: '1', step: '1', value: String(s.bankroll_start), 'aria-label': 'Argent de départ en euros', inputmode: 'decimal' });
   box.append(
     el('div', { class: 'bank', text: eur(s.bankroll) }),
     el('p', { class: 'bank-sub' }, 'Argent disponible, dont ', eur(s.pending), ' en jeu. Résultat total : ',
@@ -467,8 +499,6 @@ function renderTrack() {
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
       el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui.` })),
-    el('h2', { class: 'section', text: 'Mes comptes' }),
-    ...walletRows(s),
     el('h2', { class: 'section', text: 'Historique' }));
   if (!state.bets.length) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucune mise pour l\'instant' }),
@@ -476,12 +506,6 @@ function renderTrack() {
   } else {
     state.bets.forEach(b => box.append(betRow(b)));
   }
-  box.append(el('h2', { class: 'section', text: 'Argent de départ' }),
-    el('div', { class: 'settings' }, input,
-      el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
-        try { await api('bankroll', 'POST', { bankroll_start: Number(input.value) }); await loadStats(); renderTrack(); toast('Argent de départ enregistré.'); }
-        catch (e) { toast(e.message, true); }
-      } })));
 }
 
 /* ---------------- Passés ---------------- */
@@ -507,6 +531,70 @@ function renderPast(days) {
   });
 }
 
+/* ---------------- En direct ---------------- */
+let liveTimer = null;
+function liveCard(b) {
+  const [home, away] = (b.match || '').split(/\s+[–-]\s+/);
+  const l = b.live;
+  const st = !l ? 'En attente du coup d\'envoi' : l.state === 'in' ? null : l.state === 'post' ? 'Terminé' : 'Pas commencé';
+  return el('div', { class: 'livecard' },
+    el('div', { class: 'lt' }, el('span', { text: `${SPORT[b.sport] || ''} ${b.kickoff ? new Date(b.kickoff).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}` }),
+      st ? el('span', { text: st }) : el('span', { class: 'dot', text: '● EN DIRECT ' + (l.clock || '') })),
+    el('div', { class: 'teams' }, el('span', { text: home || b.match }),
+      el('span', { class: 'score', text: l ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
+    el('div', { class: 'mine', text: `Ton pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` }));
+}
+async function renderLive() {
+  const box = document.getElementById('live-box');
+  try { await loadBets(); } catch (_) {}
+  box.replaceChildren();
+  const list = state.bets.filter(b => b.result === 'pending' || (b.live && b.live.state === 'post' && b.date === (state.today && state.today.date)));
+  document.getElementById('livestamp').textContent = 'mis à jour ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  if (!list.length) {
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucun pari en cours' }),
+      el('p', { text: 'Quand tu enregistres un pari, son score apparaît ici et se met à jour tout seul.' })));
+    return;
+  }
+  list.forEach(b => box.append(liveCard(b)));
+}
+
+/* ---------------- Réglages ---------------- */
+function renderSettings(st) {
+  const box = document.getElementById('settings-box'); box.replaceChildren();
+  const s = state.stats;
+  const auto = el('input', { type: 'checkbox', id: 'auto' }); auto.checked = st.auto;
+  const hourSel = el('select', { id: 'hour', 'aria-label': 'Heure de l\'analyse' });
+  for (let x = 5; x <= 14; x++) hourSel.append(el('option', { value: String(x), text: x + ' h' }));
+  hourSel.value = String(st.hour);
+  const live = el('input', { type: 'checkbox', id: 'live' }); live.checked = st.live;
+  const save = async (body, ok, input) => { try { await api('settings', 'POST', body); toast(ok); } catch (err) { toast(err.message, true); if (input) input.checked = !input.checked; } };
+  auto.addEventListener('change', () => save({ auto: auto.checked }, auto.checked ? 'Analyse automatique activée.' : 'Analyse automatique désactivée : plus d\'analyse ni de notification.', auto));
+  hourSel.addEventListener('change', () => save({ hour: Number(hourSel.value) }, 'Heure d\'analyse : ' + hourSel.value + ' h.'));
+  live.addEventListener('change', () => save({ live: live.checked }, live.checked ? 'Suivi en direct activé.' : 'Suivi en direct désactivé.', live));
+  const start = el('input', { type: 'number', min: '1', step: '1', value: String(s.bankroll_start), 'aria-label': 'Argent de départ en euros', inputmode: 'decimal' });
+  const notifBtn = el('button', { class: 'btn small', type: 'button', text: 'Tester la notification iPhone', onclick: async () => {
+    notifBtn.disabled = true;
+    try { const r = await api('notify', 'POST', {}); toast(r.status || 'Envoyé.'); } catch (err) { toast(err.message, true); }
+    notifBtn.disabled = false;
+  } });
+  box.append(
+    el('div', {},
+      el('div', { class: 'panel' }, el('h2', { text: 'Analyse' }),
+        el('label', { class: 'autobox' }, auto, el('span', { text: 'Analyse automatique chaque matin, vers' }), hourSel),
+        el('p', { class: 'note', text: 'Tu peux aussi lancer une analyse à tout moment (même après minuit) avec « Actualiser l\'analyse » dans Aujourd\'hui.' })),
+      el('div', { class: 'panel' }, el('h2', { text: 'Notifications' }),
+        el('label', { class: 'autobox' }, live, el('span', { text: 'Buts, mi-temps et résultat de mes paris' })),
+        notifBtn,
+        el('p', { class: 'note', id: 'notifstatus', text: state.today && state.today.notification ? 'iPhone : ' + state.today.notification : '' })),
+      el('div', { class: 'panel' }, el('h2', { text: 'Argent de départ' }),
+        el('div', { class: 'settings' }, start,
+          el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
+            try { await api('bankroll', 'POST', { bankroll_start: Number(start.value) }); await loadStats(); toast('Argent de départ enregistré.'); }
+            catch (e) { toast(e.message, true); }
+          } })))),
+    el('div', {}, el('div', { class: 'panel' }, el('h2', { text: 'Mes comptes bookmakers' }), ...walletRows(s))));
+}
+
 /* ---------------- chargement ---------------- */
 async function loadToday() { state.today = await api('today'); }
 async function loadStats() { state.stats = await api('stats'); }
@@ -519,43 +607,23 @@ document.getElementById('refresh').addEventListener('click', async e => {
   b.disabled = false; b.textContent = 'Actualiser l\'analyse';
 });
 
-document.getElementById('notify').addEventListener('click', async e => {
-  const b = e.currentTarget; b.disabled = true;
-  try { const r = await api('notify', 'POST', {}); toast(r.status || 'Envoyé.'); state.today = await api('today'); renderToday(); }
-  catch (err) { toast(err.message, true); state.today = await api('today'); renderToday(); }
-  b.disabled = false;
-});
-const hourSel = document.getElementById('hour');
-for (let x = 5; x <= 14; x++) hourSel.append(el('option', { value: String(x), text: x + ' h' }));
-hourSel.addEventListener('change', async () => {
-  try { await api('settings', 'POST', { hour: Number(hourSel.value) }); toast('Heure d\'analyse : ' + hourSel.value + ' h.'); }
-  catch (err) { toast(err.message, true); }
-});
-document.getElementById('live').addEventListener('change', async e => {
-  try { await api('settings', 'POST', { live: e.target.checked }); toast(e.target.checked ? 'Suivi en direct activé.' : 'Suivi en direct désactivé.'); }
-  catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
-});
-document.getElementById('auto').addEventListener('change', async e => {
-  try { await api('settings', 'POST', { auto: e.target.checked }); toast(e.target.checked ? 'Analyse automatique activée.' : 'Analyse automatique désactivée : plus d\'analyse ni de notification.'); }
-  catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
-});
-
-document.querySelectorAll('nav button').forEach(btn => btn.addEventListener('click', () => {
-  document.querySelectorAll('nav button').forEach(x => x.removeAttribute('aria-current'));
-  btn.setAttribute('aria-current', 'page');
-  const t = btn.dataset.tab;
-  document.getElementById('tab-today').hidden = t !== 'today';
-  document.getElementById('tab-track').hidden = t !== 'track';
-  document.getElementById('tab-past').hidden = t !== 'past';
-  if (t === 'past') { api('history').then(r => renderPast(r.days)).catch(e => toast(e.message, true)); }
-  if (t === 'track') { Promise.all([loadStats(), loadBets()]).then(renderTrack); }
+async function showTab(t) {
+  document.querySelectorAll('.topbar nav button').forEach(x => x.toggleAttribute('aria-current', x.dataset.tab === t));
+  document.querySelectorAll('.topbar nav button[aria-current]').forEach(x => x.setAttribute('aria-current', 'page'));
+  ['today', 'live', 'past', 'track', 'settings'].forEach(n => document.getElementById('tab-' + n).hidden = n !== t);
+  clearInterval(liveTimer); liveTimer = null;
+  try {
+    if (t === 'past') renderPast((await api('history')).days);
+    if (t === 'track') { await Promise.all([loadStats(), loadBets()]); renderTrack(); }
+    if (t === 'settings') { await Promise.all([loadStats(), loadToday()]); renderSettings(await api('settings')); }
+    if (t === 'live') { await renderLive(); liveTimer = setInterval(renderLive, 20000); }
+  } catch (e) { toast(e.message, true); }
   window.scrollTo(0, 0);
-}));
+}
+document.querySelectorAll('.topbar nav button').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
 (async () => {
-  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack();
-    try { const st = await api('settings'); document.getElementById('auto').checked = st.auto;
-      document.getElementById('live').checked = st.live; hourSel.value = String(st.hour); } catch (_) {} }
+  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack(); }
   catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
 })();
 </script>
