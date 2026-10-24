@@ -369,7 +369,7 @@ def task_fetch_answer(today, env):
     token = env.get("GITHUB_TOKEN")
     if not token:
         raise RuntimeError("clé GITHUB_TOKEN manquante dans les réglages de l'application")
-    f = gh_call("GET", f"inbox/answer-{today.isoformat()}.json", token)
+    f = gh_call("GET", f"answer-{today.isoformat()}.json", token)
     if not f:
         return False
     import base64
@@ -395,7 +395,7 @@ def task_request(pool, today, env):
     if not token:
         raise RuntimeError("clé GITHUB_TOKEN manquante dans les réglages de l'application")
     import base64
-    path = f"inbox/request-{today.isoformat()}.json"
+    path = f"request-{today.isoformat()}.json"
     if gh_call("GET", path, token):
         return
     items = [{"id": review_key(c), "sport": c["sport"], "league": c["league"], "home": c["home"], "away": c["away"],
@@ -406,21 +406,12 @@ def task_request(pool, today, env):
                                   "content": base64.b64encode(json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")).decode("ascii")})
 
 
-def routine_launch(today, env):
-    """Réveille la tâche Claude depuis l'appli (déclencheur API). Ne lève jamais d'erreur : renvoie un état.
-    manual = pas configuré (il faut prévenir Claude dans le chat) ; fired / already / error."""
+def _routine_post(env, text):
+    """Appelle le déclencheur API de la tâche Claude. Ne lève jamais d'erreur : renvoie un état.
+    manual = pas configuré ; error = refus ou panne ; fired = Claude est réveillé."""
     rid, token = env.get("ROUTINE_ID"), env.get("ROUTINE_TOKEN")
     if not rid or not token:
         return {"status": "manual"}
-    path = os.path.join(DATA, f"fire_{today.isoformat()}.json")
-    if os.path.exists(path) and not os.environ.get("TESSBET_REFIRE"):
-        try:
-            with open(path, encoding="utf-8") as f:
-                return dict(json.load(f), status="already")
-        except (OSError, ValueError):
-            pass
-    text = (f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {today.isoformat()}. "
-            f"Fichier à traiter : inbox/request-{today.isoformat()}.json (réponse : inbox/answer-{today.isoformat()}.json).")
     req = urllib.request.Request(
         ROUTINE_FIRE_URL.format(rid=urllib.parse.quote(rid, safe="")), method="POST",
         data=json.dumps({"text": text}).encode("utf-8"),
@@ -433,10 +424,30 @@ def routine_launch(today, env):
         return {"status": "error", "error": FIRE_ERRORS.get(err.code, f"erreur {err.code}")}
     except Exception as e:
         return {"status": "error", "error": f"connexion impossible ({str(e)[:60]})"}
-    st = {"fired_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-          "session_url": res.get("claude_code_session_url")}
-    write_json(path, st)
-    return dict(st, status="fired")
+    return {"status": "fired", "session_url": res.get("claude_code_session_url"),
+            "fired_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+def routine_launch(today, env):
+    """Réveille la tâche Claude pour l'analyse du jour (une seule fois par jour, sauf relance demandée)."""
+    path = os.path.join(DATA, f"fire_{today.isoformat()}.json")
+    if env.get("ROUTINE_ID") and env.get("ROUTINE_TOKEN") and os.path.exists(path) and not os.environ.get("TESSBET_REFIRE"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return dict(json.load(f), status="already")
+        except (OSError, ValueError):
+            pass
+    res = _routine_post(env, f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {today.isoformat()}. "
+                             f"Fichier à traiter : request-{today.isoformat()}.json (réponse : answer-{today.isoformat()}.json).")
+    if res["status"] == "fired":
+        write_json(path, {"fired_at": res["fired_at"], "session_url": res["session_url"]})
+    return res
+
+
+def routine_test(env):
+    """Test de liaison : réveille la tâche pour rien (elle ne fait aucune recherche) afin de vérifier le jeton."""
+    return _routine_post(env, "TEST DE LIAISON depuis l'appli Tessbet, ce n'est pas une vraie demande. "
+                              "Ne fais AUCUNE recherche, n'écris aucun fichier, ne pousse rien : réponds seulement « Test reçu » en une phrase.")
 
 
 def claude_review(pool, cfg, env, today):
@@ -654,6 +665,8 @@ def enrich_football(cands, cfg, env, today, warnings):
             w = af.get("blend_weight", 0.2)
             c["prob"] = (1 - w) * c["prob"] + w * m[side]
         except Exception as e:  # la forme est un bonus : on n'arrête jamais l'analyse pour ça
+            if "Free plans" in str(e) or "access to this season" in str(e):
+                return  # offre gratuite sans la saison en cours : inutile d'insister ni d'alerter à chaque match
             warnings.append(f"Forme indisponible pour {c['home']} - {c['away']} ({str(e)[:60]})")
 
 

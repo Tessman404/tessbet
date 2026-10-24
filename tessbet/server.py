@@ -412,6 +412,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(*add_bet(body))
             if path == "/api/settings":
                 return self._send(*set_settings(body))
+            if path == "/api/routine/test":
+                res = engine.routine_test(engine.load_env())
+                if res["status"] == "manual":
+                    return self._send(400, {"error": "Le jeton de la tâche Claude n'est pas réglé dans les réglages de l'application."})
+                if res["status"] == "error":
+                    return self._send(502, {"error": "Claude n'a pas pu être réveillé : " + res["error"] + "."})
+                return self._send(200, res)
             if path == "/api/notify":
                 st = engine.notify_current(force=True)
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})

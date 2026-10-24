@@ -606,8 +606,19 @@ function renderSettings(st) {
     try { const r = await api('notify', 'POST', {}); toast(r.status || 'Envoyé.'); } catch (err) { toast(err.message, true); }
     notifBtn.disabled = false;
   } });
+  const claudeBtn = el('button', { class: 'btn small', type: 'button', text: 'Tester le réveil de Claude', onclick: async () => {
+    claudeBtn.disabled = true;
+    try { await api('routine/test', 'POST', {}); toast('Claude a bien été réveillé : la liaison fonctionne.'); } catch (err) { toast(err.message, true); }
+    claudeBtn.disabled = false;
+  } });
   box.append(
     el('div', {},
+      el('div', { class: 'panel' }, el('h2', { text: 'Claude' }),
+        el('p', { class: 'note', text: st.source !== 'claude_task' ? 'Mode actuel : API (crédits). Passe l\'application en « claude_task » pour que Claude fasse les recherches sans frais d\'API.'
+          : st.routine ? 'Réveil automatique de Claude réglé : le bouton « Demander à Claude » le lance sans passer par le chat.'
+          : 'Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.' }),
+        st.source === 'claude_task' && st.routine ? claudeBtn : '',
+        st.source === 'claude_task' && st.routine ? el('p', { class: 'note', text: 'Le test lance une très courte session Claude, sans recherche ni crédit de cotes.' }) : ''),
       el('div', { class: 'panel' }, el('h2', { text: 'Analyse' }),
         el('label', { class: 'autobox' }, auto, el('span', { text: 'Me proposer l\'analyse chaque matin, vers' }), hourSel),
         el('p', { class: 'note', text: 'À l\'heure choisie, Tessbet te demande sur l\'iPhone si tu veux lancer l\'analyse : rien ne part sans ton accord. Tu peux aussi la lancer toi-même à toute heure dans Aujourd\'hui.' })),
