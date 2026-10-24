@@ -6,6 +6,7 @@
   "port": 8099,
 
   "regions": "eu",
+  "bookmakers": ["pinnacle", "betfair_ex_eu", "matchbook", "betclic_fr", "winamax_fr", "unibet_fr", "parionssport_fr", "zebet_fr", "pmu_fr", "netbet_fr"],
   "cache_hours": 5,
   "max_calls_per_sport": { "football": 4, "basketball": 2, "tennis": 2 },
 

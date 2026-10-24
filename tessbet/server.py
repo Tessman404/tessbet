@@ -56,6 +56,21 @@ def bet_profit(b):
     return 0.0
 
 
+BOOK_NAMES = {"winamax": "Winamax", "unibet": "Unibet", "betclic": "Betclic", "parionssport": "Parions Sport",
+              "zebet": "Zebet", "pmu": "PMU", "netbet": "NetBet", "bwin": "Bwin", "vbet": "Vbet"}
+
+
+def returned(b, result=None):
+    """Argent rendu par le site pour ce pari selon son résultat (la mise est retirée du compte au moment du pari)."""
+    r = result or b["result"]
+    return b["stake"] * b["odds"] if r == "win" else b["stake"] if r == "void" else 0.0
+
+
+def wallet_list(d):
+    w = d.get("wallets") or {}
+    return [{"key": k, "name": BOOK_NAMES.get(k, k), "balance": round(w[k], 2)} for k in w]
+
+
 def compute_stats(d):
     cfg = engine.load_config()
     settled = [b for b in d["bets"] if b["result"] in ("win", "lose", "void")]
@@ -63,7 +78,11 @@ def compute_stats(d):
     pending = round(sum(b["stake"] for b in d["bets"] if b["result"] == "pending"), 2)
     played = [b for b in settled if b["result"] in ("win", "lose")]
     staked_played = sum(b["stake"] for b in played)
-    bankroll = round(d["bankroll_start"] + profit, 2)
+    wallets = wallet_list(d)
+    if wallets:  # l'argent réel sur les comptes des bookmakers (+ ce qui est en jeu) fait foi
+        bankroll = round(sum(w["balance"] for w in wallets) + pending, 2)
+    else:
+        bankroll = round(d["bankroll_start"] + profit, 2)
     today = today_paris()
     staked_today = round(sum(b["stake"] for b in d["bets"] if b["date"] == today), 2)
     cap = round(cfg.get("daily_cap_pct", 0.05) * bankroll, 2)
@@ -73,7 +92,8 @@ def compute_stats(d):
         "win_rate": round(sum(1 for b in played if b["result"] == "win") / len(played), 4) if played else None,
         "n_bets": len(d["bets"]), "n_settled": len(played),
         "staked_today": staked_today, "daily_cap": cap, "daily_left": round(max(0, cap - staked_today), 2),
-        "mode": cfg.get("mode", "demo"),
+        "mode": cfg.get("mode", "demo"), "wallets": wallets,
+        "other_books": [{"key": k, "name": n} for k, n in BOOK_NAMES.items() if k not in (d.get("wallets") or {})],
     }
 
 
@@ -85,17 +105,27 @@ def add_bet(body):
     match, pick = str(body.get("match", ""))[:120], str(body.get("pick", ""))[:120]
     if not match or not pick or odds <= 1 or stake <= 0:
         return 400, {"error": "Il manque une information (match, pari, cote ou mise)."}
+    book = str(body.get("book", "")).strip().lower()
     with LOCK:
         d = load_bets()
         st = compute_stats(d)
-        if stake > st["bankroll"] - st["pending"]:
-            return 400, {"error": "Mise supérieure à l'argent disponible."}
+        wallets = d.get("wallets") or {}
+        if book and book in wallets:
+            if stake > wallets[book] + 1e-9:
+                return 400, {"error": f"Il n'y a que {wallets[book]:.2f} € sur ton compte {BOOK_NAMES.get(book, book)}."}
+        else:
+            book = ""
+            if stake > st["bankroll"] - st["pending"]:
+                return 400, {"error": "Mise supérieure à l'argent disponible."}
         if st["staked_today"] + stake > st["daily_cap"] and not body.get("force"):
             return 409, {"error": f"Cette mise dépasse ta limite du jour ({st['daily_cap']:.2f} €). "
                                   "Tu l'as fixée pour te protéger.", "needs_force": True}
         bet = {"id": uuid.uuid4().hex[:8], "created": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
                "date": today_paris(), "match": match, "pick": pick, "odds": round(odds, 2),
                "stake": round(stake, 2), "sport": str(body.get("sport", ""))[:20], "result": "pending"}
+        if book:
+            bet["book"] = book
+            wallets[book] = round(wallets[book] - bet["stake"], 2)
         d["bets"].append(bet)
         engine.write_json(BETS_PATH, d)
         return 200, {"bet": bet}
@@ -108,6 +138,9 @@ def set_result(bet_id, result):
         d = load_bets()
         for b in d["bets"]:
             if b["id"] == bet_id:
+                w = d.get("wallets") or {}
+                if b.get("book") in w:  # le compte suit : gain rendu, mise rendue si annulé
+                    w[b["book"]] = round(w[b["book"]] + returned(b, result) - returned(b), 2)
                 b["result"] = result
                 engine.write_json(BETS_PATH, d)
                 return 200, {"bet": b}
@@ -118,11 +151,32 @@ def delete_bet(bet_id):
     with LOCK:
         d = load_bets()
         n = len(d["bets"])
+        gone = [b for b in d["bets"] if b["id"] == bet_id]
         d["bets"] = [b for b in d["bets"] if b["id"] != bet_id]
         if len(d["bets"]) == n:
             return 404, {"error": "Pari introuvable."}
+        w = d.get("wallets") or {}
+        if gone and gone[0].get("book") in w:  # comme si le pari n'avait jamais existé
+            w[gone[0]["book"]] = round(w[gone[0]["book"]] + gone[0]["stake"] - returned(gone[0]), 2)
         engine.write_json(BETS_PATH, d)
         return 200, {"ok": True}
+
+
+def set_wallet(body):
+    key = str(body.get("key", "")).strip().lower()
+    if key not in BOOK_NAMES:
+        return 400, {"error": "Bookmaker inconnu."}
+    try:
+        v = float(body.get("balance"))
+    except (TypeError, ValueError):
+        return 400, {"error": "Montant invalide."}
+    if v < 0:
+        return 400, {"error": "Le solde ne peut pas être négatif."}
+    with LOCK:
+        d = load_bets()
+        d.setdefault("wallets", {})[key] = round(v, 2)
+        engine.write_json(BETS_PATH, d)
+    return 200, {"ok": True}
 
 
 def set_bankroll(body):
@@ -268,6 +322,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"bets": list(reversed(load_bets()["bets"]))})
             if path == "/api/settings":
                 return self._send(200, get_settings())
+            if path == "/api/bookmakers":  # diagnostic : quels bookmakers l'API renvoie vraiment
+                keys = set()
+                for name in os.listdir(DATA) if os.path.isdir(DATA) else []:
+                    if name.startswith("cache_"):
+                        for ev in read_json(os.path.join(DATA, name), []) or []:
+                            keys.update(b.get("key") for b in ev.get("bookmakers", []))
+                return self._send(200, {"keys": sorted(k for k in keys if k)})
             if path == "/api/history":
                 return self._send(200, get_history())
             if path == "/api/ha":
@@ -286,6 +347,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
             if path == "/api/bankroll":
                 return self._send(*set_bankroll(body))
+            if path == "/api/wallets":
+                return self._send(*set_wallet(body))
             if path.startswith("/api/bets/") and path.endswith("/result"):
                 return self._send(*set_result(path.split("/")[3], body.get("result")))
         elif method == "DELETE" and path.startswith("/api/bets/"):

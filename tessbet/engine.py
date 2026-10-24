@@ -129,6 +129,12 @@ def team_match(a, b):
 
 
 # ---------------------------------------------------------------- analyse
+def is_playable(key, playable):
+    """Vrai pour un bookmaker français jouable : « winamax_fr », ou « winamax » seul. Pas « winamax_de »."""
+    base = key[:-3] if key.endswith("_fr") else key
+    return base in playable
+
+
 def analyse_event(ev, cfg):
     """Retourne un candidat par issue (hors nul si exclu) avec probabilité estimée et meilleure cote."""
     sharp = cfg.get("sharp_books", {})
@@ -156,7 +162,7 @@ def analyse_event(ev, cfg):
             if max(names, key=lambda m: probs[m][i]) == n:
                 agree += 1
         offers = [(b["outcomes"][n], b["title"], b["key"]) for b in books]
-        play = [o for o in offers if any(s in o[2] for s in playable)]
+        play = [o for o in offers if is_playable(o[2], playable)]
         pool = play if play else offers
         best = max(pool, key=lambda o: o[0])
         out.append({
@@ -166,6 +172,7 @@ def analyse_event(ev, cfg):
             "prob": fair, "dispersion": disp, "n_books": len(books),
             "agree": agree, "odds": best[0], "bookmaker": best[1],
             "playable": bool(play), "edge": fair * best[0] - 1,
+            "offers": [{"key": o[2], "book": o[1], "odds": o[0]} for o in sorted(play, key=lambda o: -o[0])][:9],
         })
     return out
 
@@ -547,8 +554,10 @@ def fetch_live_events(cfg, env, now, warnings):
     end = (paris_now + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     events, quota = [], None
+    books = cfg.get("bookmakers") or []
+    tag = hashlib.md5(",".join(books or [cfg["regions"]]).encode()).hexdigest()[:6]
     for k in keys:
-        cache_path = os.path.join(DATA, f"cache_{k}.json")
+        cache_path = os.path.join(DATA, f"cache_{k}_{tag}.json")
         raw = None
         if os.path.exists(cache_path):
             age = now.timestamp() - os.path.getmtime(cache_path)
@@ -556,10 +565,14 @@ def fetch_live_events(cfg, env, now, warnings):
                 with open(cache_path, encoding="utf-8") as f:
                     raw = json.load(f)
         if raw is None:
-            q = urllib.parse.urlencode({
-                "apiKey": key, "regions": cfg["regions"], "markets": "h2h", "oddsFormat": "decimal",
-                "dateFormat": "iso", "commenceTimeFrom": now.strftime(fmt),
-                "commenceTimeTo": end.astimezone(dt.timezone.utc).strftime(fmt)})
+            params = {"apiKey": key, "markets": "h2h", "oddsFormat": "decimal",
+                      "dateFormat": "iso", "commenceTimeFrom": now.strftime(fmt),
+                      "commenceTimeTo": end.astimezone(dt.timezone.utc).strftime(fmt)}
+            if books:  # 10 bookmakers au plus = 1 seul crédit par appel
+                params["bookmakers"] = ",".join(books)
+            else:
+                params["regions"] = cfg["regions"]
+            q = urllib.parse.urlencode(params)
             try:
                 raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{q}")
                 quota = headers.get("x-requests-remaining", headers.get("X-Requests-Remaining", quota))
@@ -711,7 +724,8 @@ def run(mode=None):
             "sport": c["sport"], "league": c["league"], "kickoff": c["commence"],
             "kickoff_local": kick.strftime("%H:%M"), "match": f"{c['home']} – {c['away']}",
             "pick": c["pick"], "pick_label": pick_label(c), "odds": round(c["odds"], 2),
-            "bookmaker": c["bookmaker"], "prob": round(c["prob"], 4), "edge": round(c["edge"], 4),
+            "bookmaker": c["bookmaker"], "offers": c.get("offers", []),
+            "prob": round(c["prob"], 4), "edge": round(c["edge"], 4),
             "kind": c["kind"], "confidence": c["confidence"], "confidence_score": c["confidence_score"],
             "stake_pct": c["stake_pct"], "n_books": c["n_books"], "reasons": explain(c),
             "claude": c.get("claude")})

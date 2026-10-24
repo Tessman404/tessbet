@@ -165,6 +165,13 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 .autobox { display:flex; align-items:center; gap:10px; margin:0 0 14px; color:#fff; font-size:.95rem; }
 .autobox input { width:22px; height:22px; accent-color:#ffd23f; }
+.offers { margin:10px 0 0; font-size:.82rem; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.offers span { padding:2px 8px; border:1px solid #c5d3cb; border-radius:99px; }
+.offers span.mine { background:#ffd23f; border-color:#ffd23f; color:var(--ink); font-weight:700; }
+.betform select { min-height:36px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; background:#fff; color:var(--ink); }
+.wallet { display:flex; align-items:center; gap:8px; margin:8px 0; color:#fff; flex-wrap:wrap; }
+.wallet b { min-width:92px; }
+.wallet input { width:96px; min-height:38px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; }
 .analyse { margin:10px 0 4px; padding:12px 14px; background:#fff; border-radius:10px; border:1px solid #d5e0da; }
 .analyse h3 { margin:0 0 8px; font:700 1rem var(--display); }
 .analyse p { margin:0 0 9px; line-height:1.45; font-size:.93rem; color:var(--ink); }
@@ -258,9 +265,28 @@ function ticket(s) {
   const suggested = Math.max(0.5, Math.round(bank * s.stake_pct * 2) / 2);
   const conf = { 'Élevée': 'high', 'Bonne': 'good', 'Moyenne': 'mid' }[s.confidence] || 'mid';
   const input = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(suggested), id: 'stake-' + s.id, inputmode: 'decimal' });
+  const wallets = state.stats ? state.stats.wallets : [];
+  const baseOf = k => k.replace(/_fr$/, '');
+  const offerOf = w => (s.offers || []).find(o => baseOf(o.key) === w.key);
+  const mine = wallets.filter(w => offerOf(w));
+  const bestMine = mine.sort((a, b) => offerOf(b).odds - offerOf(a).odds)[0];
+  const bookSel = el('select', { id: 'book-' + s.id, 'aria-label': 'Bookmaker' },
+    wallets.map(w => el('option', { value: w.key, text: `${w.name} (${eur(w.balance)})` })),
+    el('option', { value: '', text: 'Autre site' }));
+  const oddsInput = el('input', { type: 'number', min: '1.01', step: '0.01', value: String((bestMine ? offerOf(bestMine).odds : s.odds)), id: 'odds-' + s.id, inputmode: 'decimal' });
+  if (bestMine) bookSel.value = bestMine.key;
+  bookSel.addEventListener('change', () => {
+    const w = wallets.find(x => x.key === bookSel.value); const o = w && offerOf(w);
+    oddsInput.value = String(o ? o.odds : s.odds);
+  });
   const form = el('div', { class: 'betform' },
+    wallets.length ? [el('label', { for: 'book-' + s.id, text: 'Site' }), bookSel] : null,
+    el('label', { for: 'odds-' + s.id, text: 'Cote réelle' }), oddsInput,
     el('label', { for: 'stake-' + s.id, text: 'Mise (€)' }), input,
-    el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: () => saveBet(s, input.value, false) }));
+    el('button', { class: 'btn small', type: 'button', text: 'Enregistrer',
+      onclick: () => saveBet(s, input.value, oddsInput.value, wallets.length ? bookSel.value : '', false) }));
+  const offerChips = (s.offers || []).length ? el('p', { class: 'offers' }, 'Cotes : ',
+    (s.offers || []).slice(0, 6).map(o => el('span', { class: wallets.some(w => w.key === baseOf(o.key)) ? 'mine' : '', text: `${o.book} ${odds(o.odds)}` }))) : null;
   const toggle = el('button', { class: 'btn', type: 'button', text: 'J\'ai parié', onclick: () => form.classList.toggle('open') });
 
   const marks = [25, 50, 75].map(m => el('b', { style: `left:${m}%` }));
@@ -291,6 +317,7 @@ function ticket(s) {
       el('div', { class: 'chips' },
         el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
         s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
+      offerChips,
       claudeBox,
       analyse,
       el('details', {}, el('summary', { text: 'Pourquoi ce pari ?' }), el('ul', {}, details)),
@@ -301,13 +328,13 @@ function ticket(s) {
     el('div', { class: 'stub' }, el('span', { class: 'odds', text: odds(s.odds) }), el('small', { text: s.bookmaker })));
 }
 
-async function saveBet(s, stakeValue, force) {
+async function saveBet(s, stakeValue, oddsValue, book, force) {
   try {
-    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: s.odds, stake: Number(stakeValue), sport: s.sport, force });
+    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: Number(oddsValue) || s.odds, stake: Number(stakeValue), sport: s.sport, book, force });
     toast('Pari enregistré dans « Mes mises ».');
     await loadStats(); renderTrack();
   } catch (e) {
-    if (e.status === 409 && confirm(e.message + '\n\nEnregistrer quand même ?')) return saveBet(s, stakeValue, true);
+    if (e.status === 409 && confirm(e.message + '\n\nEnregistrer quand même ?')) return saveBet(s, stakeValue, oddsValue, book, true);
     if (e.status !== 409) toast(e.message, true);
   }
 }
@@ -353,9 +380,31 @@ function betRow(b) {
   } }));
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` })),
+      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + b.book : '') })),
       res),
     btns);
+}
+
+function walletRows(s) {
+  const save = async (key, input) => {
+    try { await api('wallets', 'POST', { key, balance: Number(input.value) }); await loadStats(); renderTrack(); renderToday(); toast('Solde enregistré.'); }
+    catch (e) { toast(e.message, true); }
+  };
+  const row = w => {
+    const input = el('input', { type: 'number', min: '0', step: '0.01', value: String(w.balance), inputmode: 'decimal', 'aria-label': 'Solde ' + w.name });
+    return el('div', { class: 'wallet' }, el('b', { text: w.name }), input, '€',
+      el('button', { class: 'btn small', type: 'button', text: 'Mettre à jour', onclick: () => save(w.key, input) }));
+  };
+  const rows = s.wallets.map(row);
+  if (!s.wallets.length) {
+    rows.push(el('p', { class: 'note', text: 'Indique ce que tu as sur chaque site : Tessbet calcule alors ta mise et ta limite du jour d\'après ton vrai argent.' }));
+    ['winamax', 'unibet'].forEach(k => rows.push(row({ key: k, name: k === 'winamax' ? 'Winamax' : 'Unibet', balance: '' })));
+  }
+  const sel = el('select', { 'aria-label': 'Autre site' }, s.other_books.filter(o => s.wallets.length || !['winamax', 'unibet'].includes(o.key)).map(o => el('option', { value: o.key, text: o.name })));
+  const amount = el('input', { type: 'number', min: '0', step: '0.01', placeholder: '0', inputmode: 'decimal', 'aria-label': 'Solde' });
+  rows.push(el('div', { class: 'wallet' }, el('b', { text: 'Ajouter' }), sel, amount, '€',
+    el('button', { class: 'btn small', type: 'button', text: 'Ajouter', onclick: () => sel.value && save(sel.value, amount) })));
+  return rows;
 }
 
 function renderTrack() {
@@ -376,6 +425,8 @@ function renderTrack() {
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
       el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui.` })),
+    el('h2', { class: 'section', text: 'Mes comptes' }),
+    ...walletRows(s),
     el('h2', { class: 'section', text: 'Historique' }));
   if (!state.bets.length) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucune mise pour l\'instant' }),
