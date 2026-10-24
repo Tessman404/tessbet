@@ -156,7 +156,8 @@ h2.section { margin: 26px 0 10px; font: 700 1.35rem/1.2 var(--display); color: #
 .topbar nav button[aria-current="page"] { color: #fff; border-bottom-color: var(--yellow); }
 .pagehead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .pagehead h1 { margin: 0; font: 700 1.9rem/1.1 var(--display); color: #fff; }
-.pagehead .date { margin: 0; color: var(--chalk-dim); text-transform: capitalize; }
+.pagehead .date { margin: 0; color: var(--chalk-dim); }
+#date::first-letter { text-transform: uppercase; }
 .cols { display: grid; grid-template-columns: 1fr; gap: 0 20px; align-items: start; }
 @media (min-width: 900px) { .cols { grid-template-columns: 1fr 1fr; } .cols.three { grid-template-columns: 1fr 1fr 1fr; } }
 .panel { background: var(--turf-2); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
@@ -171,8 +172,19 @@ h2.section { margin: 26px 0 10px; font: 700 1.35rem/1.2 var(--display); color: #
 .livecard .score { font: 700 2.3rem/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
 .livecard .dot { color: #ff5a5f; font-weight: 700; }
 .livecard .mine { color: var(--chalk); font-size: .9rem; }
+.badge { margin: 6px 0; padding: 8px 12px; border-radius: 10px; font-weight: 700; background: var(--turf-3); color: #fff; }
+.badge.winning, .badge.won { background: #1f7a4d; }
+.badge.losing, .badge.lost { background: #a32a2d; }
+.badge.draw { background: #8a6d00; }
+.badge.none { background: var(--turf-3); color: var(--chalk-dim); font-weight: 600; }
+.chart { width: 100%; height: auto; display: block; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--turf-3); white-space: nowrap; }
+th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .edit { display: none; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 .edit.open { display: flex; }
+.edit select { min-height: 38px; border-radius: 8px; border: 1px solid #b9c8bf; padding: 0 8px; }
 .edit input { width: 90px; min-height: 38px; border-radius: 8px; border: 1px solid #b9c8bf; padding: 0 8px; }
 .edit label { font-size: .88rem; color: var(--chalk-dim); }
 .toast {
@@ -274,8 +286,7 @@ function el(tag, props = {}, ...kids) {
   for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid.nodeType ? kid : document.createTextNode(kid));
   return n;
 }
-const HOMES = { winamax: 'https://www.winamax.fr/paris-sportifs', unibet: 'https://www.unibet.fr/sport', betclic: 'https://www.betclic.fr/',
-  parionssport: 'https://www.enligne.parionssport.fdj.fr/', zebet: 'https://www.zebet.fr/', pmu: 'https://www.pmu.fr/', netbet: 'https://www.netbet.fr/' };
+const bookName = k => ((state.stats && state.stats.books.find(x => x.key === k)) || {}).name || k;
 const safeUrl = u => { try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; } };
 const eur = n => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
 const signedEur = n => (n > 0 ? '+' : n < 0 ? '−' : '') + eur(Math.abs(n));
@@ -327,34 +338,27 @@ function ticket(s) {
   const suggested = Math.max(0.5, Math.round(bank * s.stake_pct * 2) / 2);
   const conf = { 'Élevée': 'high', 'Bonne': 'good', 'Moyenne': 'mid' }[s.confidence] || 'mid';
   const input = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(suggested), id: 'stake-' + s.id, inputmode: 'decimal' });
-  const wallets = state.stats ? state.stats.wallets : [];
+  const books = state.stats ? state.stats.books : [];
   const baseOf = k => k.replace(/_fr$/, '');
-  const offerOf = w => (s.offers || []).find(o => baseOf(o.key) === w.key);
-  const mine = wallets.filter(w => offerOf(w));
-  const bestMine = mine.sort((a, b) => offerOf(b).odds - offerOf(a).odds)[0];
+  const offerOf = bk => (s.offers || []).find(o => baseOf(o.key) === bk.key);
+  const mine = books.filter(bk => ['winamax', 'unibet'].includes(bk.key) && offerOf(bk));
+  const bestMine = mine.sort((x, y) => offerOf(y).odds - offerOf(x).odds)[0];
   const bookSel = el('select', { id: 'book-' + s.id, 'aria-label': 'Bookmaker' },
-    wallets.map(w => el('option', { value: w.key, text: `${w.name} (${eur(w.balance)})` })),
-    el('option', { value: '', text: 'Autre site' }));
+    el('option', { value: '', text: 'Choisis le site' }), books.map(bk => el('option', { value: bk.key, text: bk.name })));
   const oddsInput = el('input', { type: 'number', min: '1.01', step: '0.01', value: String((bestMine ? offerOf(bestMine).odds : s.odds)), id: 'odds-' + s.id, inputmode: 'decimal' });
   if (bestMine) bookSel.value = bestMine.key;
   bookSel.addEventListener('change', () => {
-    const w = wallets.find(x => x.key === bookSel.value); const o = w && offerOf(w);
-    oddsInput.value = String(o ? o.odds : s.odds);
+    const bk = books.find(x => x.key === bookSel.value); const o = bk && offerOf(bk);
+    if (o) oddsInput.value = String(o.odds);
   });
   const form = el('div', { class: 'betform' },
-    wallets.length ? [el('label', { for: 'book-' + s.id, text: 'Site' }), bookSel] : null,
-    el('label', { for: 'odds-' + s.id, text: 'Cote réelle' }), oddsInput,
+    el('label', { for: 'book-' + s.id, text: 'Site' }), bookSel,
+    el('label', { for: 'odds-' + s.id, text: 'Cote' }), oddsInput,
     el('label', { for: 'stake-' + s.id, text: 'Mise (€)' }), input,
     el('button', { class: 'btn small', type: 'button', text: 'J\'ai parié',
-      onclick: () => saveBet(s, input.value, oddsInput.value, wallets.length ? bookSel.value : '', false) }));
-  const linkOf = o => safeUrl(o.link) || HOMES[baseOf(o.key)] || null;
+      onclick: () => saveBet(s, input.value, oddsInput.value, bookSel.value, false) }));
   const offerChips = (s.offers || []).length ? el('p', { class: 'offers' }, 'Cotes : ',
-    (s.offers || []).slice(0, 6).map(o => { const u = linkOf(o);
-      return el(u ? 'a' : 'span', { class: wallets.some(w => w.key === baseOf(o.key)) ? 'mine' : '', text: `${o.book} ${odds(o.odds)}`,
-        href: u, target: u ? '_blank' : null, rel: u ? 'noopener noreferrer' : null }); })) : null;
-  const target = bestMine ? (s.offers || []).find(o => baseOf(o.key) === bestMine.key) : (s.offers || [])[0];
-  const betLink = target && linkOf(target) ? el('a', { class: 'btn small betlink', href: linkOf(target), target: '_blank', rel: 'noopener noreferrer',
-    text: `Parier chez ${target.book} →` }) : null;
+    (s.offers || []).slice(0, 6).map(o => el('span', { class: ['winamax', 'unibet'].includes(baseOf(o.key)) ? 'mine' : '', text: `${o.book} ${odds(o.odds)}` }))) : null;
 
   const marks = [25, 50, 75].map(m => el('b', { style: `left:${m}%` }));
   const cl = s.claude;
@@ -384,7 +388,6 @@ function ticket(s) {
         el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
         s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
       offerChips,
-      betLink,
       claudeBox,
       analyse,
       el('button', { class: 'btn small copy', type: 'button', text: 'Copier l\'analyse pour la partager',
@@ -397,6 +400,7 @@ function ticket(s) {
 }
 
 async function saveBet(s, stakeValue, oddsValue, book, force) {
+  if (!book) { toast('Choisis chez quel site tu as parié.', true); return; }
   try {
     await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: Number(oddsValue) || s.odds, stake: Number(stakeValue), sport: s.sport, book, force, league_key: s.league_key, pick_team: s.pick_team, kickoff: s.kickoff });
     toast('Pari enregistré dans « Mes mises ».');
@@ -443,9 +447,11 @@ function betRow(b) {
   }
   const eo = el('input', { type: 'number', min: '1.01', step: '0.01', value: String(b.odds), inputmode: 'decimal', 'aria-label': 'Cote' });
   const es = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(b.stake), inputmode: 'decimal', 'aria-label': 'Mise' });
-  const edit = el('div', { class: 'edit' }, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es,
+  const eb = el('select', { 'aria-label': 'Site' }, el('option', { value: '', text: 'Non précisé' }), state.stats.books.map(bk => el('option', { value: bk.key, text: bk.name })));
+  eb.value = b.book || '';
+  const edit = el('div', { class: 'edit' }, el('label', { text: 'Site' }), eb, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es,
     el('button', { class: 'btn small', type: 'button', text: 'Valider', onclick: async () => {
-      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value) }); await loadStats(); await loadBets(); renderTrack(); toast('Pari modifié.'); }
+      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value), book: eb.value }); await loadStats(); await loadBets(); renderTrack(); toast('Pari modifié.'); }
       catch (e) { toast(e.message, true); }
     } }));
   btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Modifier cote / mise', onclick: () => edit.classList.toggle('open') }));
@@ -455,31 +461,46 @@ function betRow(b) {
   } }));
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + b.book : '') + (b.live ? (b.live.state === 'in' ? ` – 🔴 en direct ${b.live.score[0]}-${b.live.score[1]} (${b.live.clock})` : b.live.state === 'post' ? ` – terminé ${b.live.score[0]}-${b.live.score[1]}` : '') : '') })),
+      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + (b.live ? (b.live.state === 'in' ? ` – 🔴 en direct ${b.live.score[0]}-${b.live.score[1]} (${b.live.clock})` : b.live.state === 'post' ? ` – terminé ${b.live.score[0]}-${b.live.score[1]}` : '') : '') })),
       res),
     btns, edit);
 }
 
-function walletRows(s) {
-  const save = async (key, input) => {
-    try { await api('wallets', 'POST', { key, balance: Number(input.value) }); await loadStats(); renderTrack(); renderToday(); if (!document.getElementById('tab-settings').hidden) renderSettings(await api('settings')); toast('Solde enregistré.'); }
-    catch (e) { toast(e.message, true); }
-  };
-  const row = w => {
-    const input = el('input', { type: 'number', min: '0', step: '0.01', value: String(w.balance), inputmode: 'decimal', 'aria-label': 'Solde ' + w.name });
-    return el('div', { class: 'wallet' }, el('b', { text: w.name }), input, '€',
-      el('button', { class: 'btn small', type: 'button', text: 'Mettre à jour', onclick: () => save(w.key, input) }));
-  };
-  const rows = s.wallets.map(row);
-  if (!s.wallets.length) {
-    rows.push(el('p', { class: 'note', text: 'Indique ce que tu as sur chaque site : Tessbet calcule alors ta mise et ta limite du jour d\'après ton vrai argent.' }));
-    ['winamax', 'unibet'].forEach(k => rows.push(row({ key: k, name: k === 'winamax' ? 'Winamax' : 'Unibet', balance: '' })));
+function evolution(s) {
+  const wrap = el('div', {});
+  const pts = [{ bankroll: s.bankroll_start, label: 'Départ' }, ...s.series];
+  wrap.append(el('h2', { class: 'section', text: 'Évolution de mon argent' }));
+  if (s.series.length) {
+    const W = 600, H = 200, P = 28;
+    const ys = pts.map(p => p.bankroll), lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 1;
+    const X = i => P + (pts.length === 1 ? 0 : i * (W - 2 * P) / (pts.length - 1));
+    const Y = v => H - P - (v - lo) / span * (H - 2 * P);
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'chart'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Courbe de mon argent après chaque pari terminé');
+    const add = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (text) n.textContent = text; svg.append(n); };
+    add('line', { x1: P, x2: W - P, y1: Y(s.bankroll_start), y2: Y(s.bankroll_start), stroke: '#8fb0a0', 'stroke-dasharray': '4 4', 'stroke-width': 1 });
+    add('polyline', { points: pts.map((p, i) => `${X(i)},${Y(p.bankroll)}`).join(' '), fill: 'none', stroke: '#ffd23f', 'stroke-width': 3, 'stroke-linejoin': 'round' });
+    pts.forEach((p, i) => add('circle', { cx: X(i), cy: Y(p.bankroll), r: 4.5, fill: i && p.profit < 0 ? '#ff7478' : '#2fbf71' }));
+    add('text', { x: P, y: 14, fill: '#cfe3d8', 'font-size': 12 }, 'Max ' + eur(hi));
+    add('text', { x: P, y: H - 6, fill: '#8fb0a0', 'font-size': 12 }, 'Min ' + eur(lo));
+    add('text', { x: W - P, y: 14, fill: '#fff', 'font-size': 13, 'text-anchor': 'end', 'font-weight': 700 }, 'Aujourd\'hui ' + eur(s.bankroll));
+    wrap.append(el('div', { class: 'panel' }, svg, el('p', { class: 'note', text: `Départ ${eur(s.bankroll_start)} → maintenant ${eur(s.bankroll)} (${signedEur(s.profit)}). Un point = un pari terminé.` })));
+  } else wrap.append(el('p', { class: 'note', text: 'La courbe apparaît dès ton premier pari terminé.' }));
+  wrap.append(el('h2', { class: 'section', text: 'Par bookmaker' }));
+  wrap.append(el('div', { class: 'panel tablewrap' }, el('table', {},
+    el('thead', {}, el('tr', {}, ['Site', 'Paris', 'Misé', 'Résultat', 'Solde estimé'].map(t => el('th', { text: t })))),
+    el('tbody', {}, s.by_book.map(x => el('tr', {}, el('td', { text: x.name }), el('td', { text: String(x.n) }), el('td', { text: eur(x.staked) }),
+      el('td', { class: x.profit > 0 ? 'pos' : x.profit < 0 ? 'neg' : '', text: signedEur(x.profit) }), el('td', { text: eur(x.balance) }))))),
+    el('p', { class: 'note', text: 'Solde estimé = ce que tu as engagé sur le site + ce que tu y as gagné ou perdu. « Non précisé » : modifie le pari pour choisir son site.' })));
+  if (s.by_day.length) {
+    wrap.append(el('h2', { class: 'section', text: 'Jour par jour' }));
+    wrap.append(el('div', { class: 'panel tablewrap' }, el('table', {},
+      el('thead', {}, el('tr', {}, ['Jour', 'Paris', 'Misé', 'Résultat'].map(t => el('th', { text: t })))),
+      el('tbody', {}, s.by_day.map(x => el('tr', {}, el('td', { text: new Date(x.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) }),
+        el('td', { text: String(x.n) }), el('td', { text: eur(x.staked) }), el('td', { class: x.profit > 0 ? 'pos' : x.profit < 0 ? 'neg' : '', text: signedEur(x.profit) })))))));
   }
-  const sel = el('select', { 'aria-label': 'Autre site' }, s.other_books.filter(o => s.wallets.length || !['winamax', 'unibet'].includes(o.key)).map(o => el('option', { value: o.key, text: o.name })));
-  const amount = el('input', { type: 'number', min: '0', step: '0.01', placeholder: '0', inputmode: 'decimal', 'aria-label': 'Solde' });
-  rows.push(el('div', { class: 'wallet' }, el('b', { text: 'Ajouter' }), sel, amount, '€',
-    el('button', { class: 'btn small', type: 'button', text: 'Ajouter', onclick: () => sel.value && save(sel.value, amount) })));
-  return rows;
+  return wrap;
 }
 
 function renderTrack() {
@@ -498,7 +519,8 @@ function renderTrack() {
     el('div', { class: 'limit' },
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
-      el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui.` })),
+      el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui. Tu peux changer la limite dans Réglages.` })),
+    evolution(s),
     el('h2', { class: 'section', text: 'Historique' }));
   if (!state.bets.length) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucune mise pour l\'instant' }),
@@ -535,18 +557,24 @@ function renderPast(days) {
 let liveTimer = null;
 function liveCard(b) {
   const [home, away] = (b.match || '').split(/\s+[–-]\s+/);
-  const l = b.live;
-  const st = !l ? 'En attente du coup d\'envoi' : l.state === 'in' ? null : l.state === 'post' ? 'Terminé' : 'Pas commencé';
+  const l = b.live, st = b.status;
+  const stateTxt = !l ? 'En attente du coup d\'envoi' : l.state === 'in' ? null : l.state === 'post' ? 'Terminé' : 'Pas commencé';
+  const badge = st ? el('div', { class: 'badge ' + st.code, text: (st.code === 'won' ? '✅ ' : st.code === 'lost' ? '❌ ' : st.code === 'winning' ? '🟢 ' : st.code === 'losing' ? '🔴 ' : '🟡 ') + st.text + (st.code === 'won' || st.code === 'lost' ? ' (match terminé)' : '') })
+    : el('div', { class: 'badge none', text: l && l.state === 'in' ? 'Statut indisponible' : 'Pas encore commencé' });
+  const confirm = (r) => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await loadStats(); await renderLive(); toast('Résultat enregistré.'); } catch (e) { toast(e.message, true); } };
   return el('div', { class: 'livecard' },
     el('div', { class: 'lt' }, el('span', { text: `${SPORT[b.sport] || ''} ${b.kickoff ? new Date(b.kickoff).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}` }),
-      st ? el('span', { text: st }) : el('span', { class: 'dot', text: '● EN DIRECT ' + (l.clock || '') })),
+      stateTxt ? el('span', { text: stateTxt }) : el('span', { class: 'dot', text: '● EN DIRECT ' + (l.clock || '') })),
     el('div', { class: 'teams' }, el('span', { text: home || b.match }),
       el('span', { class: 'score', text: l ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
-    el('div', { class: 'mine', text: `Ton pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` }));
+    badge,
+    el('div', { class: 'mine', text: `Mon pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + ` – gain possible ${eur(b.stake * (b.odds - 1))}` }),
+    b.result === 'pending' && st && (st.code === 'won' || st.code === 'lost')
+      ? el('div', { class: 'btns' }, el('button', { class: 'btn small ' + (st.code === 'won' ? 'win' : 'lose'), type: 'button', text: st.code === 'won' ? 'Valider : gagné' : 'Valider : perdu', onclick: confirm(st.code === 'won' ? 'win' : 'lose') })) : null);
 }
 async function renderLive() {
   const box = document.getElementById('live-box');
-  try { await loadBets(); } catch (_) {}
+  try { await Promise.all([loadBets(), loadStats()]); } catch (_) {}
   box.replaceChildren();
   const list = state.bets.filter(b => b.result === 'pending' || (b.live && b.live.state === 'post' && b.date === (state.today && state.today.date)));
   document.getElementById('livestamp').textContent = 'mis à jour ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -571,7 +599,7 @@ function renderSettings(st) {
   auto.addEventListener('change', () => save({ auto: auto.checked }, auto.checked ? 'Analyse automatique activée.' : 'Analyse automatique désactivée : plus d\'analyse ni de notification.', auto));
   hourSel.addEventListener('change', () => save({ hour: Number(hourSel.value) }, 'Heure d\'analyse : ' + hourSel.value + ' h.'));
   live.addEventListener('change', () => save({ live: live.checked }, live.checked ? 'Suivi en direct activé.' : 'Suivi en direct désactivé.', live));
-  const start = el('input', { type: 'number', min: '1', step: '1', value: String(s.bankroll_start), 'aria-label': 'Argent de départ en euros', inputmode: 'decimal' });
+  const cap = el('input', { type: 'number', min: '1', step: '1', placeholder: 'Auto', value: st.cap ? String(st.cap) : '', inputmode: 'decimal', 'aria-label': 'Limite de mise par jour en euros' });
   const notifBtn = el('button', { class: 'btn small', type: 'button', text: 'Tester la notification iPhone', onclick: async () => {
     notifBtn.disabled = true;
     try { const r = await api('notify', 'POST', {}); toast(r.status || 'Envoyé.'); } catch (err) { toast(err.message, true); }
@@ -586,13 +614,13 @@ function renderSettings(st) {
         el('label', { class: 'autobox' }, live, el('span', { text: 'Buts, mi-temps et résultat de mes paris' })),
         notifBtn,
         el('p', { class: 'note', id: 'notifstatus', text: state.today && state.today.notification ? 'iPhone : ' + state.today.notification : '' })),
-      el('div', { class: 'panel' }, el('h2', { text: 'Argent de départ' }),
-        el('div', { class: 'settings' }, start,
+      el('div', { class: 'panel' }, el('h2', { text: 'Limite de mise par jour' }),
+        el('div', { class: 'settings' }, cap, '€',
           el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
-            try { await api('bankroll', 'POST', { bankroll_start: Number(start.value) }); await loadStats(); toast('Argent de départ enregistré.'); }
+            try { await api('settings', 'POST', { cap: cap.value === '' ? null : Number(cap.value) }); await loadStats(); toast(cap.value === '' ? 'Limite automatique (5 % de ton argent).' : 'Limite enregistrée : ' + eur(Number(cap.value)) + ' par jour.'); }
             catch (e) { toast(e.message, true); }
-          } })))),
-    el('div', {}, el('div', { class: 'panel' }, el('h2', { text: 'Mes comptes bookmakers' }), ...walletRows(s))));
+          } })),
+        el('p', { class: 'note', text: 'Laisse vide pour la limite automatique (5 % de ton argent). Tessbet te prévient quand une mise la dépasse.' }))));
 }
 
 /* ---------------- chargement ---------------- */

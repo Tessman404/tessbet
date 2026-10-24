@@ -139,6 +139,34 @@ def final_result(side, score):
     return "win" if mine > other else "lose"
 
 
+def bet_status(bet, lv):
+    """Où en est mon pari : gagne / perd / égalité en cours, ou gagné / perdu si le match est fini."""
+    if not lv:
+        return None
+    home, away = split_match(bet.get("match"))
+    if not home:
+        return None
+    side = pick_side(bet, home, away)
+    if side is None:
+        return None
+    score = lv["score"]
+    if lv["state"] == "post":
+        r = final_result(side, score)
+        return {"code": "won" if r == "win" else "lost", "text": "Gagné" if r == "win" else "Perdu"}
+    if lv["state"] != "in":
+        return None
+    h, a = score
+    mine, other = (h, a) if side != "away" else (a, h)
+    if side == "draw":
+        ok = h == a
+        return {"code": "winning" if ok else "losing", "text": "Tu gagnes pour l'instant" if ok else "Tu perds pour l'instant"}
+    if mine > other:
+        return {"code": "winning", "text": "Tu gagnes pour l'instant"}
+    if mine == other:
+        return {"code": "draw", "text": "Égalité : pas encore gagné"}
+    return {"code": "losing", "text": "Tu perds pour l'instant"}
+
+
 def messages(bet, home, away, cur, st, sport, first):
     """Liste de (clé, titre, message) à envoyer d'après l'évolution du match."""
     side = pick_side(bet, home, away)

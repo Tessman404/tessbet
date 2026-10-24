@@ -576,10 +576,7 @@ def fetch_live_events(cfg, env, now, warnings):
             else:
                 params["regions"] = cfg["regions"]
             try:
-                try:  # liens directs vers le pari chez chaque bookmaker
-                    raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{urllib.parse.urlencode(dict(params, includeLinks='true'))}")
-                except urllib.error.HTTPError:
-                    raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{urllib.parse.urlencode(params)}")
+                raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{urllib.parse.urlencode(params)}")
                 quota = headers.get("x-requests-remaining", headers.get("X-Requests-Remaining", quota))
                 write_json(cache_path, raw)
             except Exception as e:

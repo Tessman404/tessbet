@@ -15,6 +15,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import engine
+import live
 
 BASE = engine.BASE
 DATA = engine.DATA
@@ -66,34 +67,52 @@ def returned(b, result=None):
     return b["stake"] * b["odds"] if r == "win" else b["stake"] if r == "void" else 0.0
 
 
-def wallet_list(d):
-    w = d.get("wallets") or {}
-    return [{"key": k, "name": BOOK_NAMES.get(k, k), "balance": round(w[k], 2)} for k in w]
+def get_cap_setting():
+    c = read_json(SETTINGS_PATH, {}).get("cap")
+    return float(c) if isinstance(c, (int, float)) and c > 0 else None
 
 
 def compute_stats(d):
     cfg = engine.load_config()
-    settled = [b for b in d["bets"] if b["result"] in ("win", "lose", "void")]
+    bets = sorted(d["bets"], key=lambda b: b.get("created", ""))
+    settled = [b for b in bets if b["result"] in ("win", "lose", "void")]
     profit = round(sum(bet_profit(b) for b in settled), 2)
-    pending = round(sum(b["stake"] for b in d["bets"] if b["result"] == "pending"), 2)
+    pending = round(sum(b["stake"] for b in bets if b["result"] == "pending"), 2)
     played = [b for b in settled if b["result"] in ("win", "lose")]
     staked_played = sum(b["stake"] for b in played)
-    wallets = wallet_list(d)
-    if wallets:  # l'argent réel sur les comptes des bookmakers (+ ce qui est en jeu) fait foi
-        bankroll = round(sum(w["balance"] for w in wallets) + pending, 2)
-    else:
-        bankroll = round(d["bankroll_start"] + profit, 2)
+    bankroll = round(d["bankroll_start"] + profit, 2)
     today = today_paris()
-    staked_today = round(sum(b["stake"] for b in d["bets"] if b["date"] == today), 2)
-    cap = round(cfg.get("daily_cap_pct", 0.05) * bankroll, 2)
+    staked_today = round(sum(b["stake"] for b in bets if b["date"] == today), 2)
+    manual = get_cap_setting()
+    cap = round(manual if manual else cfg.get("daily_cap_pct", 0.05) * bankroll, 2)
+    # évolution : argent total après chaque pari terminé, et résultat par jour
+    run, series, by_day = d["bankroll_start"], [], {}
+    for b in settled:
+        p = bet_profit(b)
+        run = round(run + p, 2)
+        series.append({"date": b["date"], "label": b["pick"], "profit": p, "bankroll": run})
+        day = by_day.setdefault(b["date"], {"date": b["date"], "n": 0, "staked": 0.0, "profit": 0.0})
+        day["n"] += 1; day["staked"] = round(day["staked"] + b["stake"], 2); day["profit"] = round(day["profit"] + p, 2)
+    # répartition par bookmaker : l'argent engagé là + le résultat obtenu là
+    books = {}
+    for b in bets:
+        k = b.get("book") or ""
+        x = books.setdefault(k, {"key": k, "name": BOOK_NAMES.get(k, "Non précisé"), "n": 0, "staked": 0.0, "profit": 0.0, "won": 0})
+        x["n"] += 1; x["staked"] = round(x["staked"] + b["stake"], 2)
+        x["profit"] = round(x["profit"] + bet_profit(b), 2)
+        x["won"] += b["result"] == "win"
+    for x in books.values():
+        x["balance"] = round(x["staked"] + x["profit"], 2)
+    by_book = sorted(books.values(), key=lambda x: -x["balance"])
     return {
         "bankroll_start": d["bankroll_start"], "bankroll": bankroll, "profit": profit, "pending": pending,
         "roi": round(profit / staked_played, 4) if staked_played else None,
         "win_rate": round(sum(1 for b in played if b["result"] == "win") / len(played), 4) if played else None,
-        "n_bets": len(d["bets"]), "n_settled": len(played),
+        "n_bets": len(bets), "n_settled": len(played),
         "staked_today": staked_today, "daily_cap": cap, "daily_left": round(max(0, cap - staked_today), 2),
-        "mode": cfg.get("mode", "demo"), "wallets": wallets,
-        "other_books": [{"key": k, "name": n} for k, n in BOOK_NAMES.items() if k not in (d.get("wallets") or {})],
+        "cap_manual": manual, "mode": cfg.get("mode", "demo"),
+        "series": series, "by_day": sorted(by_day.values(), key=lambda x: x["date"], reverse=True), "by_book": by_book,
+        "books": [{"key": k, "name": n} for k, n in BOOK_NAMES.items()],
     }
 
 
@@ -106,17 +125,12 @@ def add_bet(body):
     if not match or not pick or odds <= 1 or stake <= 0:
         return 400, {"error": "Il manque une information (match, pari, cote ou mise)."}
     book = str(body.get("book", "")).strip().lower()
+    book = book if book in BOOK_NAMES else ""
     with LOCK:
         d = load_bets()
         st = compute_stats(d)
-        wallets = d.get("wallets") or {}
-        if book and book in wallets:
-            if stake > wallets[book] + 1e-9:
-                return 400, {"error": f"Il n'y a que {wallets[book]:.2f} € sur ton compte {BOOK_NAMES.get(book, book)}."}
-        else:
-            book = ""
-            if stake > st["bankroll"] - st["pending"]:
-                return 400, {"error": "Mise supérieure à l'argent disponible."}
+        if stake > st["bankroll"] - st["pending"] + 1e-9:
+            return 400, {"error": "Mise supérieure à l'argent disponible."}
         if st["staked_today"] + stake > st["daily_cap"] and not body.get("force"):
             return 409, {"error": f"Cette mise dépasse ta limite du jour ({st['daily_cap']:.2f} €). "
                                   "Tu l'as fixée pour te protéger.", "needs_force": True}
@@ -128,7 +142,6 @@ def add_bet(body):
                 bet[k] = str(body[k])[:80]
         if book:
             bet["book"] = book
-            wallets[book] = round(wallets[book] - bet["stake"], 2)
         d["bets"].append(bet)
         engine.write_json(BETS_PATH, d)
         return 200, {"bet": bet}
@@ -141,9 +154,6 @@ def set_result(bet_id, result):
         d = load_bets()
         for b in d["bets"]:
             if b["id"] == bet_id:
-                w = d.get("wallets") or {}
-                if b.get("book") in w:  # le compte suit : gain rendu, mise rendue si annulé
-                    w[b["book"]] = round(w[b["book"]] + returned(b, result) - returned(b), 2)
                 b["result"] = result
                 engine.write_json(BETS_PATH, d)
                 return 200, {"bet": b}
@@ -164,14 +174,13 @@ def update_bet(bet_id, body):
                 return 400, {"error": "Cote ou mise invalide."}
             if odds <= 1 or stake <= 0:
                 return 400, {"error": "La cote doit dépasser 1 et la mise être positive."}
-            new = dict(b, odds=round(odds, 2), stake=round(stake, 2))
-            w = d.get("wallets") or {}
-            if b.get("book") in w:
-                delta = (-new["stake"] + returned(new)) - (-b["stake"] + returned(b))
-                if w[b["book"]] + delta < -1e-9:
-                    return 400, {"error": f"Pas assez d'argent sur ton compte {BOOK_NAMES.get(b['book'], b['book'])}."}
-                w[b["book"]] = round(w[b["book"]] + delta, 2)
-            b.update(odds=new["odds"], stake=new["stake"])
+            b.update(odds=round(odds, 2), stake=round(stake, 2))
+            if "book" in body:
+                k = str(body["book"]).strip().lower()
+                if k in BOOK_NAMES:
+                    b["book"] = k
+                else:
+                    b.pop("book", None)
             engine.write_json(BETS_PATH, d)
             return 200, {"bet": b}
     return 404, {"error": "Pari introuvable."}
@@ -185,28 +194,8 @@ def delete_bet(bet_id):
         d["bets"] = [b for b in d["bets"] if b["id"] != bet_id]
         if len(d["bets"]) == n:
             return 404, {"error": "Pari introuvable."}
-        w = d.get("wallets") or {}
-        if gone and gone[0].get("book") in w:  # comme si le pari n'avait jamais existé
-            w[gone[0]["book"]] = round(w[gone[0]["book"]] + gone[0]["stake"] - returned(gone[0]), 2)
         engine.write_json(BETS_PATH, d)
         return 200, {"ok": True}
-
-
-def set_wallet(body):
-    key = str(body.get("key", "")).strip().lower()
-    if key not in BOOK_NAMES:
-        return 400, {"error": "Bookmaker inconnu."}
-    try:
-        v = float(body.get("balance"))
-    except (TypeError, ValueError):
-        return 400, {"error": "Montant invalide."}
-    if v < 0:
-        return 400, {"error": "Le solde ne peut pas être négatif."}
-    with LOCK:
-        d = load_bets()
-        d.setdefault("wallets", {})[key] = round(v, 2)
-        engine.write_json(BETS_PATH, d)
-    return 200, {"ok": True}
 
 
 def set_bankroll(body):
@@ -256,7 +245,8 @@ def get_settings():
     hour = s.get("hour")
     if not isinstance(hour, int) or not 0 <= hour <= 23:
         hour = int(engine.load_config().get("auto_run_hour", 9))
-    return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour}
+    return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour,
+            "cap": get_cap_setting()}
 
 
 def set_settings(body):
@@ -273,6 +263,18 @@ def set_settings(body):
         if not 5 <= h <= 14:
             return 400, {"error": "Choisis une heure entre 5 h et 14 h."}
         s["hour"] = h
+    if "cap" in body:
+        raw = body["cap"]
+        if raw in (None, "", 0):
+            s["cap"] = None
+        else:
+            try:
+                c = float(raw)
+            except (TypeError, ValueError):
+                return 400, {"error": "Montant invalide."}
+            if c <= 0:
+                return 400, {"error": "La limite doit être positive."}
+            s["cap"] = round(c, 2)
     engine.write_json(SETTINGS_PATH, s)
     return 200, s
 
@@ -363,8 +365,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/stats":
                 return self._send(200, compute_stats(load_bets()))
             if path == "/api/bets":
-                live = read_json(os.path.join(DATA, "live.json"), {})
-                bets = [dict(b, live=live.get(b["id"], {}).get("live")) for b in reversed(load_bets()["bets"])]
+                lvs = read_json(os.path.join(DATA, "live.json"), {})
+                bets = [dict(b, live=lvs.get(b["id"], {}).get("live"), status=live.bet_status(b, lvs.get(b["id"], {}).get("live")))
+                        for b in reversed(load_bets()["bets"])]
                 return self._send(200, {"bets": bets})
             if path == "/api/settings":
                 return self._send(200, get_settings())
@@ -393,8 +396,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
             if path == "/api/bankroll":
                 return self._send(*set_bankroll(body))
-            if path == "/api/wallets":
-                return self._send(*set_wallet(body))
             if path.startswith("/api/bets/") and path.count("/") == 3:
                 return self._send(*update_bet(path.split("/")[3], body))
             if path.startswith("/api/bets/") and path.endswith("/result"):
