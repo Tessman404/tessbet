@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d2b22">
+<title>Tessbet</title>
+<style>
+:root {
+  --turf: #0d2b22;
+  --turf-2: #143a2d;
+  --turf-3: #1d4d3b;
+  --chalk: #cfe3d8;
+  --chalk-dim: #8fb0a0;
+  --ticket: #f1f5f3;
+  --ink: #10201a;
+  --ink-2: #4b5f56;
+  --yellow: #ffd23f;
+  --red: #e5383b;
+  --green: #2fbf71;
+  --display: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --text: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; min-height: 100vh; background: var(--turf); color: var(--chalk);
+  font: 16px/1.5 var(--text); padding-bottom: 88px;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+
+/* Cercle central tracé à la craie : le seul décor de la page */
+.pitch-mark { position: absolute; inset: 0 0 auto 0; height: 360px; overflow: hidden; pointer-events: none; }
+.pitch-mark svg { position: absolute; right: -90px; top: -70px; width: 330px; opacity: .09; }
+.wrap { position: relative; max-width: 560px; margin: 0 auto; padding: 28px 18px 0; }
+
+header { margin-bottom: 14px; }
+header h1 { margin: 0; font: 700 2.6rem/1 var(--display); letter-spacing: .01em; color: #fff; }
+header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
+.summary { margin: 18px 0 22px; font-size: 1.05rem; color: var(--chalk); max-width: 34ch; }
+.banner {
+  margin: 16px 0 0; padding: 10px 12px; border: 1.5px dashed var(--yellow); border-radius: 10px;
+  color: var(--yellow); font-size: .9rem;
+}
+
+/* ---- Ticket ---- */
+.ticket {
+  position: relative; display: grid; grid-template-columns: 1fr 112px; margin: 0 0 18px;
+  background: var(--ticket); color: var(--ink); border-radius: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.28);
+}
+.ticket .body { padding: 16px 16px 14px 18px; min-width: 0; }
+.ticket .stub {
+  position: relative; background: var(--yellow); border-radius: 0 16px 16px 0; padding: 16px 10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  border-left: 2px dashed rgba(16,32,26,.45);
+}
+.ticket .stub::before, .ticket .stub::after {
+  content: ""; position: absolute; left: -11px; width: 20px; height: 20px; border-radius: 50%; background: var(--turf);
+}
+.ticket .stub::before { top: -10px; }
+.ticket .stub::after { bottom: -10px; }
+.odds { font: 700 2.7rem/1 var(--display); font-variant-numeric: tabular-nums; color: var(--ink); }
+.stub small { margin-top: 6px; font-size: .78rem; line-height: 1.25; color: rgba(16,32,26,.78); overflow-wrap: anywhere; }
+
+.meta { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: .85rem; }
+.pick { margin: 6px 0 2px; font: 700 1.4rem/1.15 var(--display); }
+.match { margin: 0; color: var(--ink-2); font-size: .95rem; overflow-wrap: anywhere; }
+
+.proba { margin: 14px 0 4px; }
+.proba .row { display: flex; justify-content: space-between; align-items: baseline; font-size: .9rem; }
+.proba strong { font: 700 1.25rem/1 var(--display); }
+.track { position: relative; height: 8px; margin-top: 7px; border-radius: 4px; background: #d5e0da; }
+.track i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--turf-3); }
+.track b { position: absolute; top: -3px; width: 1.5px; height: 14px; background: rgba(16,32,26,.35); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+.chip { padding: 3px 10px; border-radius: 999px; font-size: .82rem; font-weight: 600; border: 1.5px solid var(--ink); }
+.chip.high { background: var(--turf-3); border-color: var(--turf-3); color: #fff; }
+.chip.good { background: transparent; border-color: var(--turf-3); color: var(--turf-3); }
+.chip.mid  { background: transparent; border-color: var(--ink-2); color: var(--ink-2); }
+.chip.deal { background: var(--yellow); border-color: var(--ink); color: var(--ink); }
+.chip.fav  { background: transparent; border-style: dashed; border-color: var(--ink-2); color: var(--ink-2); }
+
+.claude { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #e3ebe7; border-left: 4px solid var(--turf-3); }
+.claude strong { font-size: .92rem; }
+.claude p { margin: 3px 0 0; font-size: .9rem; color: var(--ink-2); }
+.claude.prudence { background: #fff3cf; border-left-color: #c98a00; }
+.claude.none { background: #f6e3e3; border-left-color: var(--red); }
+details a { color: var(--turf-3); font-weight: 600; }
+details { margin-top: 12px; }
+summary { cursor: pointer; font-weight: 600; font-size: .92rem; padding: 4px 0; }
+details ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: .9rem; }
+details li { margin: 4px 0; }
+
+.actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #d5e0da; }
+.actions .stake { font-size: .88rem; color: var(--ink-2); }
+.actions .stake b { color: var(--ink); font-size: 1rem; }
+.btn { border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 700; background: var(--ink); color: #fff; min-height: 40px; white-space: nowrap; }
+.btn.ghost { background: transparent; border: 1.5px solid currentColor; }
+.btn.small { padding: 6px 10px; min-height: 34px; font-size: .88rem; }
+.btn:disabled { opacity: .5; cursor: default; }
+.betform { display: none; margin-top: 12px; gap: 8px; align-items: center; flex-wrap: wrap; }
+.betform.open { display: flex; }
+.betform input {
+  width: 84px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--ink-2);
+  background: #fff; color: var(--ink); font-size: 1rem;
+}
+.betform label { font-size: .9rem; color: var(--ink-2); }
+
+/* ---- états vides / info ---- */
+.empty { border: 1.5px dashed var(--chalk-dim); border-radius: 16px; padding: 22px 18px; }
+.empty h2 { margin: 0 0 6px; font: 700 1.4rem/1.15 var(--display); color: #fff; }
+.empty p { margin: 0; color: var(--chalk); }
+.note { margin: 22px 0 0; font-size: .85rem; color: var(--chalk-dim); }
+.warn { margin: 12px 0 0; font-size: .85rem; color: var(--yellow); }
+.refresh { margin-top: 6px; background: transparent; border: 1.5px solid var(--chalk-dim); color: var(--chalk); }
+
+/* ---- suivi ---- */
+.bank { margin: 4px 0 4px; font: 700 3.1rem/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.bank-sub { margin: 0 0 20px; color: var(--chalk-dim); }
+.pos { color: var(--green); } .neg { color: #ff7478; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+.cell { background: var(--turf-2); border-radius: 12px; padding: 12px; }
+.cell span { display: block; font-size: .82rem; color: var(--chalk-dim); }
+.cell strong { font: 700 1.5rem/1.2 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.limit { background: var(--turf-2); border-radius: 12px; padding: 14px; margin-bottom: 22px; }
+.limit .row { display: flex; justify-content: space-between; font-size: .92rem; }
+.limit .track { background: var(--turf); height: 10px; }
+.limit .track i { background: var(--yellow); }
+.limit .track.over i { background: var(--red); }
+.limit p { margin: 8px 0 0; font-size: .85rem; color: var(--chalk-dim); }
+h2.section { margin: 26px 0 10px; font: 700 1.35rem/1.2 var(--display); color: #fff; }
+.bet { background: var(--turf-2); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.bet .top { display: flex; justify-content: space-between; gap: 10px; }
+.bet .name { font-weight: 600; overflow-wrap: anywhere; }
+.bet .sub { color: var(--chalk-dim); font-size: .88rem; overflow-wrap: anywhere; }
+.bet .res { font: 700 1.2rem/1 var(--display); white-space: nowrap; }
+.bet .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.btn.win { background: var(--green); color: var(--ink); }
+.btn.lose { background: var(--red); color: #fff; }
+.btn.void, .btn.del { background: transparent; border: 1.5px solid var(--chalk-dim); color: var(--chalk); }
+.settings { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.settings input { width: 120px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--chalk-dim); background: var(--turf-2); color: #fff; }
+.settings .btn { background: var(--chalk); color: var(--ink); }
+
+/* ---- navigation basse ---- */
+nav {
+  position: fixed; left: 0; right: 0; bottom: 0; background: var(--turf-2); border-top: 1px solid var(--turf-3);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav div { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; }
+nav button { background: transparent; border: 0; padding: 14px 8px 12px; color: var(--chalk-dim); font-weight: 600; border-top: 3px solid transparent; }
+nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); max-width: 90vw;
+  background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: .92rem;
+  box-shadow: 0 6px 18px rgba(0,0,0,.4); z-index: 10;
+}
+.toast.err { background: var(--red); }
+[hidden] { display: none !important; }
+@media (max-width: 380px) { .ticket { grid-template-columns: 1fr 96px; } .odds { font-size: 2.3rem; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="pitch-mark" aria-hidden="true">
+  <svg viewBox="0 0 400 400" fill="none" stroke="#cfe3d8" stroke-width="5">
+    <circle cx="200" cy="200" r="150"/><circle cx="200" cy="200" r="7" fill="#cfe3d8"/><path d="M0 200h400"/>
+  </svg>
+</div>
+
+<main class="wrap">
+  <section id="tab-today">
+    <header>
+      <h1>Tessbet</h1>
+      <p class="date" id="date"></p>
+    </header>
+    <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
+    <p class="summary" id="summary"></p>
+    <div id="tickets"></div>
+    <p class="warn" id="warnings"></p>
+    <button class="btn refresh" id="refresh" type="button">Actualiser l'analyse</button>
+    <p class="note" id="disclaimer"></p>
+  </section>
+
+  <section id="tab-past" hidden>
+    <header><h1>Passés</h1></header>
+    <div id="past"></div>
+  </section>
+
+  <section id="tab-track" hidden>
+    <header><h1>Mes mises</h1></header>
+    <div id="track"></div>
+  </section>
+</main>
+
+<nav aria-label="Navigation">
+  <div>
+    <button type="button" data-tab="today" aria-current="page">Aujourd'hui</button>
+    <button type="button" data-tab="past">Passés</button>
+    <button type="button" data-tab="track">Mes mises</button>
+  </div>
+</nav>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾' };
+const state = { today: null, stats: null, bets: [] };
+
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return n;
+}
+const eur = n => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
+const signedEur = n => (n > 0 ? '+' : n < 0 ? '−' : '') + eur(Math.abs(n));
+const pct = (x, d = 0) => (x * 100).toFixed(d).replace('.', ',') + ' %';
+const odds = x => x.toFixed(2).replace('.', ',');
+
+async function api(path, method = 'GET', body) {
+  const r = await fetch('api/' + path, {
+    method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || 'Une erreur est survenue.'), { status: r.status, data: j });
+  return j;
+}
+
+let toastTimer;
+function toast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+}
+
+/* ---------------- Aujourd'hui ---------------- */
+function ticket(s) {
+  const bank = state.stats ? state.stats.bankroll : 0;
+  const suggested = Math.max(0.5, Math.round(bank * s.stake_pct * 2) / 2);
+  const conf = { 'Élevée': 'high', 'Bonne': 'good', 'Moyenne': 'mid' }[s.confidence] || 'mid';
+  const input = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(suggested), id: 'stake-' + s.id, inputmode: 'decimal' });
+  const form = el('div', { class: 'betform' },
+    el('label', { for: 'stake-' + s.id, text: 'Mise (€)' }), input,
+    el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: () => saveBet(s, input.value, false) }));
+  const toggle = el('button', { class: 'btn', type: 'button', text: 'J\'ai parié', onclick: () => form.classList.toggle('open') });
+
+  const marks = [25, 50, 75].map(m => el('b', { style: `left:${m}%` }));
+  const cl = s.claude;
+  const claudeBox = el('div', { class: 'claude ' + (cl ? cl.verdict : 'none') },
+    el('strong', { text: !cl ? 'Non vérifié par Claude' : cl.verdict === 'confirme' ? 'Claude confirme' : 'Claude conseille la prudence' }),
+    cl ? el('p', { text: cl.resume + (cl.demo ? ' (exemple fictif)' : '') }) : null);
+  const details = [...s.reasons, ...(cl ? cl.points : [])].map(r => el('li', { text: r }));
+  if (cl && cl.sources.length) {
+    const links = [];
+    cl.sources.forEach((u, i) => {
+      if (i) links.push(', ');
+      links.push(el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', text: new URL(u).hostname.replace(/^www\./, '') }));
+    });
+    details.push(el('li', {}, 'Sources : ', links));
+  }
+  return el('article', { class: 'ticket' },
+    el('div', { class: 'body' },
+      el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: s.kickoff_local })),
+      el('h2', { class: 'pick', text: s.pick_label }),
+      el('p', { class: 'match', text: s.match }),
+      el('div', { class: 'proba' },
+        el('div', { class: 'row' }, el('span', { text: 'Chances estimées' }), el('strong', { text: pct(s.prob) })),
+        el('div', { class: 'track' }, el('i', { style: `width:${Math.round(s.prob * 100)}%` }), marks)),
+      el('div', { class: 'chips' },
+        el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
+        s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
+      claudeBox,
+      el('details', {}, el('summary', { text: 'Pourquoi ce pari ?' }), el('ul', {}, details)),
+      el('div', { class: 'actions' },
+        el('span', { class: 'stake' }, 'Mise conseillée ', el('b', { text: eur(suggested) })),
+        toggle),
+      form),
+    el('div', { class: 'stub' }, el('span', { class: 'odds', text: odds(s.odds) }), el('small', { text: s.bookmaker })));
+}
+
+async function saveBet(s, stakeValue, force) {
+  try {
+    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: s.odds, stake: Number(stakeValue), sport: s.sport, force });
+    toast('Pari enregistré dans « Mes mises ».');
+    await loadStats(); renderTrack();
+  } catch (e) {
+    if (e.status === 409 && confirm(e.message + '\n\nEnregistrer quand même ?')) return saveBet(s, stakeValue, true);
+    if (e.status !== 409) toast(e.message, true);
+  }
+}
+
+function renderToday() {
+  const d = state.today;
+  if (!d) return;
+  const day = new Date(d.date + 'T12:00:00');
+  document.getElementById('date').textContent = day.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('demo-banner').hidden = d.mode !== 'demo';
+  document.getElementById('summary').textContent = d.message || '';
+  const box = document.getElementById('tickets');
+  box.replaceChildren();
+  if (!d.selections.length) {
+    box.append(el('div', { class: 'empty' },
+      el('h2', { text: 'Pas de pari aujourd\'hui' }),
+      el('p', { text: 'Aucun match ne remplit les critères de solidité. Passer son tour fait partie du jeu : repasse demain matin.' })));
+  } else {
+    d.selections.forEach(s => box.append(ticket(s)));
+  }
+  document.getElementById('warnings').textContent = (d.warnings || []).length ? 'À noter : ' + d.warnings.slice(0, 3).join(' ; ') : '';
+  document.getElementById('disclaimer').textContent = d.disclaimer || '';
+}
+
+/* ---------------- Mes mises ---------------- */
+function betRow(b) {
+  const profit = b.result === 'win' ? b.stake * (b.odds - 1) : b.result === 'lose' ? -b.stake : 0;
+  const label = { win: 'Gagné', lose: 'Perdu', void: 'Annulé', pending: 'En cours' }[b.result];
+  const res = el('span', { class: 'res ' + (profit > 0 ? 'pos' : profit < 0 ? 'neg' : ''), text: b.result === 'pending' ? 'En cours' : `${label} ${profit ? signedEur(profit) : ''}`.trim() });
+  const setRes = r => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await loadStats(); await loadBets(); renderTrack(); } catch (e) { toast(e.message, true); } };
+  const btns = el('div', { class: 'btns' });
+  if (b.result === 'pending') {
+    btns.append(el('button', { class: 'btn small win', type: 'button', text: 'Gagné', onclick: setRes('win') }),
+      el('button', { class: 'btn small lose', type: 'button', text: 'Perdu', onclick: setRes('lose') }),
+      el('button', { class: 'btn small void', type: 'button', text: 'Annulé', onclick: setRes('void') }));
+  } else {
+    btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Remettre en cours', onclick: setRes('pending') }));
+  }
+  btns.append(el('button', { class: 'btn small del', type: 'button', text: 'Supprimer', onclick: async () => {
+    if (!confirm('Supprimer ce pari de l\'historique ?')) return;
+    try { await api('bets/' + b.id, 'DELETE'); await loadStats(); await loadBets(); renderTrack(); } catch (e) { toast(e.message, true); }
+  } }));
+  return el('div', { class: 'bet' },
+    el('div', { class: 'top' },
+      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` })),
+      res),
+    btns);
+}
+
+function renderTrack() {
+  const s = state.stats; if (!s) return;
+  const box = document.getElementById('track'); box.replaceChildren();
+  const over = s.staked_today > s.daily_cap;
+  const used = s.daily_cap ? Math.min(100, (s.staked_today / s.daily_cap) * 100) : 0;
+  const input = el('input', { type: 'number', min: '1', step: '1', value: String(s.bankroll_start), 'aria-label': 'Argent de départ en euros', inputmode: 'decimal' });
+  box.append(
+    el('div', { class: 'bank', text: eur(s.bankroll) }),
+    el('p', { class: 'bank-sub' }, 'Argent disponible, dont ', eur(s.pending), ' en jeu. Résultat total : ',
+      el('span', { class: s.profit > 0 ? 'pos' : s.profit < 0 ? 'neg' : '', text: signedEur(s.profit) })),
+    el('div', { class: 'grid3' },
+      el('div', { class: 'cell' }, el('span', { text: 'Réussite' }), el('strong', { text: s.win_rate == null ? '–' : pct(s.win_rate) })),
+      el('div', { class: 'cell' }, el('span', { text: 'Rendement' }), el('strong', { text: s.roi == null ? '–' : pct(s.roi, 1) })),
+      el('div', { class: 'cell' }, el('span', { text: 'Paris terminés' }), el('strong', { text: String(s.n_settled) }))),
+    el('div', { class: 'limit' },
+      el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
+      el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
+      el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui.` })),
+    el('h2', { class: 'section', text: 'Historique' }));
+  if (!state.bets.length) {
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucune mise pour l\'instant' }),
+      el('p', { text: 'Quand tu paries, appuie sur « J\'ai parié » sur le ticket pour suivre ton argent ici.' })));
+  } else {
+    state.bets.forEach(b => box.append(betRow(b)));
+  }
+  box.append(el('h2', { class: 'section', text: 'Argent de départ' }),
+    el('div', { class: 'settings' }, input,
+      el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
+        try { await api('bankroll', 'POST', { bankroll_start: Number(input.value) }); await loadStats(); renderTrack(); toast('Argent de départ enregistré.'); }
+        catch (e) { toast(e.message, true); }
+      } })));
+}
+
+/* ---------------- Passés ---------------- */
+function renderPast(days) {
+  const box = document.getElementById('past'); box.replaceChildren();
+  if (!days.length) {
+    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Rien pour l\'instant' }),
+      el('p', { text: 'Les paris proposés chaque jour restent ici, même si tu effaces la notification.' })));
+    return;
+  }
+  days.forEach(d => {
+    const day = new Date(d.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    box.append(el('h2', { class: 'section', text: day }));
+    if (!d.selections.length) { box.append(el('p', { class: 'note', text: d.message || 'Aucun pari ce jour-là.' })); return; }
+    d.selections.forEach(s => box.append(el('div', { class: 'bet' },
+      el('div', { class: 'top' },
+        el('div', {}, el('div', { class: 'name', text: s.pick_label }),
+          el('div', { class: 'sub', text: `${s.match} – cote ${odds(s.odds)} – ${pct(s.prob)}` + (s.claude ? ' – Claude : ' + s.claude.verdict : '') }))))));
+  });
+}
+
+/* ---------------- chargement ---------------- */
+async function loadToday() { state.today = await api('today'); }
+async function loadStats() { state.stats = await api('stats'); }
+async function loadBets() { state.bets = (await api('bets')).bets; }
+
+document.getElementById('refresh').addEventListener('click', async e => {
+  const b = e.currentTarget; b.disabled = true; b.textContent = 'Analyse en cours…';
+  try { state.today = await api('refresh', 'POST', {}); renderToday(); toast(state.today.throttled ? 'Analyse déjà à jour (moins de 30 min).' : 'Analyse mise à jour.'); }
+  catch (err) { toast(err.message, true); }
+  b.disabled = false; b.textContent = 'Actualiser l\'analyse';
+});
+
+document.querySelectorAll('nav button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach(x => x.removeAttribute('aria-current'));
+  btn.setAttribute('aria-current', 'page');
+  const t = btn.dataset.tab;
+  document.getElementById('tab-today').hidden = t !== 'today';
+  document.getElementById('tab-track').hidden = t !== 'track';
+  document.getElementById('tab-past').hidden = t !== 'past';
+  if (t === 'past') { api('history').then(r => renderPast(r.days)).catch(e => toast(e.message, true)); }
+  if (t === 'track') { Promise.all([loadStats(), loadBets()]).then(renderTrack); }
+  window.scrollTo(0, 0);
+}));
+
+(async () => {
+  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack(); }
+  catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+{
+  "mode": "demo",
+  "bankroll_start": 100.0,
+  "daily_cap_pct": 0.05,
+  "auto_run_hour": 9,
+  "port": 8099,
+
+  "regions": "eu",
+  "cache_hours": 5,
+  "max_calls_per_sport": { "football": 4, "basketball": 2, "tennis": 2 },
+
+  "leagues": {
+    "football": [
+      "soccer_france_ligue_one",
+      "soccer_epl",
+      "soccer_spain_la_liga",
+      "soccer_germany_bundesliga",
+      "soccer_italy_serie_a",
+      "soccer_uefa_champs_league",
+      "soccer_uefa_europa_league"
+    ],
+    "basketball": ["basketball_nba", "basketball_euroleague"]
+  },
+
+  "playable_books": ["betclic", "winamax", "unibet", "parionssport", "zebet", "pmu", "netbet", "vbet", "bwin"],
+  "sharp_books": { "pinnacle": 3, "betfair_ex_eu": 2, "matchbook": 2 },
+
+  "selection": {
+    "max_picks": 3,
+    "min_books": 4,
+    "min_prob": 0.62,
+    "min_odds": 1.22,
+    "min_edge": -0.05,
+    "exclude_draw": true
+  },
+
+  "notify": {
+    "enabled": true,
+    "service": "mobile_app_iphone_de_thomas",
+    "when_empty": true,
+    "in_demo": false,
+    "app_url": ""
+  },
+
+  "claude": {
+    "enabled": true,
+    "required": true,
+    "model": "claude-sonnet-5-5",
+    "max_review": 6,
+    "max_searches": 15,
+    "max_tokens": 4096
+  },
+
+  "api_football": {
+    "enabled": true,
+    "max_calls": 25,
+    "blend_weight": 0.2
+  }
+}
