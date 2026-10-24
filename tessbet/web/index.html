@@ -635,7 +635,7 @@ async function launch(source) {
   try {
     state.today = await api('refresh', 'POST', { force: true, source, confirm: source === 'api' });
     renderToday();
-    toast(state.today.waiting ? 'Demande envoyée à Claude : réponse en attente.' : 'Analyse mise à jour.');
+    toast(state.today.waiting ? 'Demande envoyée. Dis à Claude dans le chat : « lance l\'analyse Tessbet ».' : 'Analyse mise à jour.');
   } catch (err) { toast(err.message, true); }
   renderLauncher();
 }
@@ -649,7 +649,7 @@ async function renderLauncher() {
     el('p', { class: 'note', text: 'Rien ne se lance sans ton accord. Tu peux le faire à toute heure, même après minuit.' }));
   if (st.source === 'claude_task') {
     box.append(el('button', { class: 'btn small', type: 'button', text: d.waiting ? 'Revérifier la réponse de Claude' : 'Demander à Claude (sans frais d\'API)', onclick: () => launch('claude_task') }));
-    if (d.waiting) box.append(el('p', { class: 'note', text: waitMin < 20 ? 'Claude fait ses recherches. Tu peux revérifier dans quelques minutes.' : 'Claude ne répond pas ?' }));
+    if (d.waiting) box.append(el('p', { class: 'note', text: waitMin < 20 ? 'Demande envoyée. Dis à Claude dans le chat : « lance l\'analyse Tessbet », puis reviens revérifier ici.' : 'Claude ne répond pas ?' }));
     if (d.waiting && waitMin >= 20) box.append(el('button', { class: 'btn small', type: 'button', text: 'Claude indisponible : utiliser l\'API (crédits)', onclick: () => launch('api') }));
   } else {
     box.append(el('button', { class: 'btn small', type: 'button', text: 'Lancer l\'analyse avec l\'API (crédits)', onclick: () => launch('api') }));
