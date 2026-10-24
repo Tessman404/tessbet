@@ -8,7 +8,7 @@
   "regions": "eu",
   "bookmakers": ["pinnacle", "betfair_ex_eu", "matchbook", "betclic_fr", "winamax_fr", "unibet_fr", "parionssport_fr", "zebet_fr", "pmu_fr", "netbet_fr"],
   "cache_hours": 5,
-  "max_calls_per_sport": { "football": 4, "basketball": 2, "tennis": 2 },
+  "max_calls_per_sport": {"football": 7, "basketball": 2, "tennis": 4},
 
   "leagues": {
     "football": [
@@ -47,7 +47,7 @@
     "enabled": true,
     "required": true,
     "model": "claude-sonnet-5-5",
-    "max_review": 6,
+    "max_review": 8,
     "max_searches": 15,
     "max_tokens": 4096,
     "analysis_tokens": 3500,
