@@ -161,7 +161,7 @@ def analyse_event(ev, cfg):
         for i in range(len(books)):
             if max(names, key=lambda m: probs[m][i]) == n:
                 agree += 1
-        offers = [(b["outcomes"][n], b["title"], b["key"]) for b in books]
+        offers = [(b["outcomes"][n], b["title"], b["key"], (b.get("links") or {}).get(n)) for b in books]
         play = [o for o in offers if is_playable(o[2], playable)]
         pool = play if play else offers
         best = max(pool, key=lambda o: o[0])
@@ -172,7 +172,9 @@ def analyse_event(ev, cfg):
             "prob": fair, "dispersion": disp, "n_books": len(books),
             "agree": agree, "odds": best[0], "bookmaker": best[1],
             "playable": bool(play), "edge": fair * best[0] - 1,
-            "offers": [{"key": o[2], "book": o[1], "odds": o[0]} for o in sorted(play, key=lambda o: -o[0])][:9],
+            "offers": [{"key": o[2], "book": o[1], "odds": o[0],
+                        "link": o[3] if isinstance(o[3], str) and o[3].startswith("https://") else None}
+                       for o in sorted(play, key=lambda o: -o[0])][:9],
         })
     return out
 
@@ -535,7 +537,8 @@ def convert_event(e, key, title):
         for m in b.get("markets", []):
             if m["key"] == "h2h":
                 books.append({"key": b["key"], "title": b["title"],
-                              "outcomes": {o["name"]: o["price"] for o in m["outcomes"]}})
+                              "outcomes": {o["name"]: o["price"] for o in m["outcomes"]},
+                              "links": {o["name"]: o.get("link") or m.get("link") or b.get("link") for o in m["outcomes"]}})
     return {"id": e["id"], "sport": sport_of(key), "league": title, "league_key": key,
             "commence": e["commence_time"], "home": e["home_team"], "away": e["away_team"], "bookmakers": books}
 
@@ -555,7 +558,7 @@ def fetch_live_events(cfg, env, now, warnings):
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     events, quota = [], None
     books = cfg.get("bookmakers") or []
-    tag = hashlib.md5(",".join(books or [cfg["regions"]]).encode()).hexdigest()[:6]
+    tag = hashlib.md5((",".join(books or [cfg["regions"]]) + "|links").encode()).hexdigest()[:6]
     for k in keys:
         cache_path = os.path.join(DATA, f"cache_{k}_{tag}.json")
         raw = None
@@ -572,9 +575,11 @@ def fetch_live_events(cfg, env, now, warnings):
                 params["bookmakers"] = ",".join(books)
             else:
                 params["regions"] = cfg["regions"]
-            q = urllib.parse.urlencode(params)
             try:
-                raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{q}")
+                try:  # liens directs vers le pari chez chaque bookmaker
+                    raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{urllib.parse.urlencode(dict(params, includeLinks='true'))}")
+                except urllib.error.HTTPError:
+                    raw, headers = http_json(f"{ODDS_URL}/sports/{k}/odds?{urllib.parse.urlencode(params)}")
                 quota = headers.get("x-requests-remaining", headers.get("X-Requests-Remaining", quota))
                 write_json(cache_path, raw)
             except Exception as e:
@@ -630,6 +635,19 @@ def ha_post(url, token, payload):
             return r.status
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Home Assistant a répondu {e.code}")
+
+
+def send_phone(title, message, tag="tessbet"):
+    """Envoie un message sur le téléphone (jamais ailleurs)."""
+    cfg, env = load_config(), load_env()
+    n = cfg.get("notify", {})
+    service = n.get("service", "")
+    if not n.get("enabled", False) or not service.startswith("mobile_app_"):
+        raise RuntimeError("notification désactivée ou service non téléphone")
+    base, token = env.get("HA_URL", "").rstrip("/"), env.get("HA_TOKEN", "")
+    if not base or not token:
+        raise RuntimeError("HA_URL ou HA_TOKEN manquant")
+    ha_post(f"{base}/api/services/notify/{service}", token, {"title": title, "message": message, "data": {"tag": tag}})
 
 
 def notification_text(result):
@@ -721,7 +739,7 @@ def run(mode=None):
         kick = to_paris(parse_iso(c["commence"]))
         selections.append({
             "id": hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:10],
-            "sport": c["sport"], "league": c["league"], "kickoff": c["commence"],
+            "sport": c["sport"], "league": c["league"], "league_key": c.get("league_key", ""), "pick_team": c["pick"], "kickoff": c["commence"],
             "kickoff_local": kick.strftime("%H:%M"), "match": f"{c['home']} – {c['away']}",
             "pick": c["pick"], "pick_label": pick_label(c), "odds": round(c["odds"], 2),
             "bookmaker": c["bookmaker"], "offers": c.get("offers", []),

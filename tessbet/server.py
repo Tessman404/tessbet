@@ -123,6 +123,9 @@ def add_bet(body):
         bet = {"id": uuid.uuid4().hex[:8], "created": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
                "date": today_paris(), "match": match, "pick": pick, "odds": round(odds, 2),
                "stake": round(stake, 2), "sport": str(body.get("sport", ""))[:20], "result": "pending"}
+        for k in ("league_key", "pick_team", "kickoff"):
+            if body.get(k):
+                bet[k] = str(body[k])[:80]
         if book:
             bet["book"] = book
             wallets[book] = round(wallets[book] - bet["stake"], 2)
@@ -222,13 +225,27 @@ SETTINGS_PATH = os.path.join(DATA, "settings.json")
 
 
 def get_settings():
-    return {"auto": bool(read_json(SETTINGS_PATH, {}).get("auto", True))}
+    s = read_json(SETTINGS_PATH, {})
+    hour = s.get("hour")
+    if not isinstance(hour, int) or not 0 <= hour <= 23:
+        hour = int(engine.load_config().get("auto_run_hour", 9))
+    return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour}
 
 
 def set_settings(body):
     s = get_settings()
     if "auto" in body:
         s["auto"] = bool(body["auto"])
+    if "live" in body:
+        s["live"] = bool(body["live"])
+    if "hour" in body:
+        try:
+            h = int(body["hour"])
+        except (TypeError, ValueError):
+            return 400, {"error": "Heure invalide."}
+        if not 5 <= h <= 14:
+            return 400, {"error": "Choisis une heure entre 5 h et 14 h."}
+        s["hour"] = h
     engine.write_json(SETTINGS_PATH, s)
     return 200, s
 
@@ -268,7 +285,7 @@ def scheduler():
             today = today_paris()
             hour = engine.to_paris(now_utc()).hour
             stale = not d or d.get("date") != today or d.get("mode") != cfg.get("mode")
-            ready = hour >= cfg.get("auto_run_hour", 9) or cfg.get("mode") == "demo"
+            ready = hour >= get_settings()["hour"] or cfg.get("mode") == "demo"
             if stale and ready and last_run != today:
                 last_run = today  # un seul essai par jour : on ne martèle pas les API en cas d'erreur
                 run_analysis(force=True)
@@ -319,7 +336,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/stats":
                 return self._send(200, compute_stats(load_bets()))
             if path == "/api/bets":
-                return self._send(200, {"bets": list(reversed(load_bets()["bets"]))})
+                live = read_json(os.path.join(DATA, "live.json"), {})
+                bets = [dict(b, live=live.get(b["id"], {}).get("live")) for b in reversed(load_bets()["bets"])]
+                return self._send(200, {"bets": bets})
             if path == "/api/settings":
                 return self._send(200, get_settings())
             if path == "/api/bookmakers":  # diagnostic : quels bookmakers l'API renvoie vraiment
@@ -369,6 +388,8 @@ def main():
     cfg = engine.load_config()
     port = int(os.environ.get("PORT", cfg.get("port", 8099)))
     threading.Thread(target=scheduler, daemon=True).start()
+    import live  # suivi des buts en direct
+    threading.Thread(target=live.run_loop, daemon=True).start()
     print(f"Paris du jour : http://0.0.0.0:{port}  (mode {cfg.get('mode')})")
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 

@@ -164,8 +164,12 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
 @media (max-width: 380px) { .ticket { grid-template-columns: 1fr 96px; } .odds { font-size: 2.3rem; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 .autobox { display:flex; align-items:center; gap:10px; margin:0 0 14px; color:#fff; font-size:.95rem; }
+.autobox select { min-height:34px; border-radius:8px; padding:0 6px; }
 .autobox input { width:22px; height:22px; accent-color:#ffd23f; }
 .offers { margin:10px 0 0; font-size:.82rem; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.offers a { text-decoration:none; color:inherit; padding:2px 8px; border:1px solid #c5d3cb; border-radius:99px; }
+.offers a.mine { background:#ffd23f; border-color:#ffd23f; font-weight:700; }
+.betlink { display:inline-block; margin-top:10px; text-decoration:none; background:#0d2b22; color:#fff; padding:9px 14px; border-radius:10px; font-weight:700; }
 .offers span { padding:2px 8px; border:1px solid #c5d3cb; border-radius:99px; }
 .offers span.mine { background:#ffd23f; border-color:#ffd23f; color:var(--ink); font-weight:700; }
 .betform select { min-height:36px; border-radius:8px; border:1px solid #b9c8bf; padding:0 8px; background:#fff; color:var(--ink); }
@@ -193,7 +197,9 @@ nav button[aria-current="page"] { color: #fff; border-top-color: var(--yellow); 
       <p class="date" id="date"></p>
     </header>
     <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
-    <label class="autobox"><input type="checkbox" id="auto"><span>Analyse automatique chaque matin</span></label>
+    <label class="autobox"><input type="checkbox" id="auto"><span>Analyse automatique chaque matin, vers</span>
+      <select id="hour" aria-label="Heure de l'analyse"></select></label>
+    <label class="autobox"><input type="checkbox" id="live"><span>Notifications en direct (buts, mi-temps, résultat) pour mes paris</span></label>
     <p class="summary" id="summary"></p>
     <div id="tickets"></div>
     <p class="warn" id="warnings"></p>
@@ -239,6 +245,9 @@ function el(tag, props = {}, ...kids) {
   for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid.nodeType ? kid : document.createTextNode(kid));
   return n;
 }
+const HOMES = { winamax: 'https://www.winamax.fr/paris-sportifs', unibet: 'https://www.unibet.fr/sport', betclic: 'https://www.betclic.fr/',
+  parionssport: 'https://www.enligne.parionssport.fdj.fr/', zebet: 'https://www.zebet.fr/', pmu: 'https://www.pmu.fr/', netbet: 'https://www.netbet.fr/' };
+const safeUrl = u => { try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; } };
 const eur = n => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
 const signedEur = n => (n > 0 ? '+' : n < 0 ? '−' : '') + eur(Math.abs(n));
 const pct = (x, d = 0) => (x * 100).toFixed(d).replace('.', ',') + ' %';
@@ -309,8 +318,14 @@ function ticket(s) {
     el('label', { for: 'stake-' + s.id, text: 'Mise (€)' }), input,
     el('button', { class: 'btn small', type: 'button', text: 'Enregistrer',
       onclick: () => saveBet(s, input.value, oddsInput.value, wallets.length ? bookSel.value : '', false) }));
+  const linkOf = o => safeUrl(o.link) || HOMES[baseOf(o.key)] || null;
   const offerChips = (s.offers || []).length ? el('p', { class: 'offers' }, 'Cotes : ',
-    (s.offers || []).slice(0, 6).map(o => el('span', { class: wallets.some(w => w.key === baseOf(o.key)) ? 'mine' : '', text: `${o.book} ${odds(o.odds)}` }))) : null;
+    (s.offers || []).slice(0, 6).map(o => { const u = linkOf(o);
+      return el(u ? 'a' : 'span', { class: wallets.some(w => w.key === baseOf(o.key)) ? 'mine' : '', text: `${o.book} ${odds(o.odds)}`,
+        href: u, target: u ? '_blank' : null, rel: u ? 'noopener noreferrer' : null }); })) : null;
+  const target = bestMine ? (s.offers || []).find(o => baseOf(o.key) === bestMine.key) : (s.offers || [])[0];
+  const betLink = target && linkOf(target) ? el('a', { class: 'btn small betlink', href: linkOf(target), target: '_blank', rel: 'noopener noreferrer',
+    text: `Parier chez ${target.book} →` }) : null;
   const toggle = el('button', { class: 'btn', type: 'button', text: 'J\'ai parié', onclick: () => form.classList.toggle('open') });
 
   const marks = [25, 50, 75].map(m => el('b', { style: `left:${m}%` }));
@@ -342,6 +357,7 @@ function ticket(s) {
         el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
         s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
       offerChips,
+      betLink,
       claudeBox,
       analyse,
       el('button', { class: 'btn small copy', type: 'button', text: 'Copier l\'analyse pour la partager',
@@ -356,7 +372,7 @@ function ticket(s) {
 
 async function saveBet(s, stakeValue, oddsValue, book, force) {
   try {
-    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: Number(oddsValue) || s.odds, stake: Number(stakeValue), sport: s.sport, book, force });
+    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: Number(oddsValue) || s.odds, stake: Number(stakeValue), sport: s.sport, book, force, league_key: s.league_key, pick_team: s.pick_team, kickoff: s.kickoff });
     toast('Pari enregistré dans « Mes mises ».');
     await loadStats(); renderTrack();
   } catch (e) {
@@ -406,7 +422,7 @@ function betRow(b) {
   } }));
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + b.book : '') })),
+      el('div', {}, el('div', { class: 'name', text: b.pick }), el('div', { class: 'sub', text: `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + b.book : '') + (b.live ? (b.live.state === 'in' ? ` – 🔴 en direct ${b.live.score[0]}-${b.live.score[1]} (${b.live.clock})` : b.live.state === 'post' ? ` – terminé ${b.live.score[0]}-${b.live.score[1]}` : '') : '') })),
       res),
     btns);
 }
@@ -509,6 +525,16 @@ document.getElementById('notify').addEventListener('click', async e => {
   catch (err) { toast(err.message, true); state.today = await api('today'); renderToday(); }
   b.disabled = false;
 });
+const hourSel = document.getElementById('hour');
+for (let x = 5; x <= 14; x++) hourSel.append(el('option', { value: String(x), text: x + ' h' }));
+hourSel.addEventListener('change', async () => {
+  try { await api('settings', 'POST', { hour: Number(hourSel.value) }); toast('Heure d\'analyse : ' + hourSel.value + ' h.'); }
+  catch (err) { toast(err.message, true); }
+});
+document.getElementById('live').addEventListener('change', async e => {
+  try { await api('settings', 'POST', { live: e.target.checked }); toast(e.target.checked ? 'Suivi en direct activé.' : 'Suivi en direct désactivé.'); }
+  catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
+});
 document.getElementById('auto').addEventListener('change', async e => {
   try { await api('settings', 'POST', { auto: e.target.checked }); toast(e.target.checked ? 'Analyse automatique activée.' : 'Analyse automatique désactivée : plus d\'analyse ni de notification.'); }
   catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
@@ -528,7 +554,8 @@ document.querySelectorAll('nav button').forEach(btn => btn.addEventListener('cli
 
 (async () => {
   try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack();
-    try { document.getElementById('auto').checked = (await api('settings')).auto; } catch (_) {} }
+    try { const st = await api('settings'); document.getElementById('auto').checked = st.auto;
+      document.getElementById('live').checked = st.live; hourSel.value = String(st.hour); } catch (_) {} }
   catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
 })();
 </script>
