@@ -287,15 +287,9 @@ Règles strictes :
 - Aucun pari n'est certain : ne promets jamais de gain et n'écris pas "sûr" ni "garanti".
 - Écris en français simple, sans jargon, phrases courtes.
 
-Pour chaque pari, rédige aussi une VRAIE ANALYSE ÉCRITE dans le champ "analyse" : 4 à 6 paragraphes courts séparés
-par une ligne vide, avec ces thèmes dans l'ordre : 1) le contexte du match et l'enjeu, 2) la forme récente des deux
-camps, 3) absents, suspendus, composition probable, 4) historique ou style de jeu s'il compte vraiment,
-5) pourquoi la cote paraît cohérente (ou non) avec ce que tu as trouvé, 6) les risques précis et ton avis final
-prudent. Appuie-toi uniquement sur des faits trouvés ; dis clairement ce que tu n'as pas pu vérifier.
-
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, de cette forme :
 {{"verdicts": [{{"id": "<l'id exact>", "verdict": "confirme|prudence|ecarte",
-  "resume": "1 ou 2 phrases claires", "analyse": "paragraphes séparés par une ligne vide", "points": ["fait vérifié 1", "fait vérifié 2"], "sources": ["https://..."]}}]}}"""
+  "resume": "1 ou 2 phrases claires", "points": ["fait vérifié 1", "fait vérifié 2"], "sources": ["https://..."]}}]}}"""
 
 
 def _collect_urls(content, seen):
@@ -320,7 +314,6 @@ def parse_review(text, pool, seen_urls):
         points = [str(p)[:220] for p in (v.get("points") or []) if p][:4]
         sources = [u for u in (v.get("sources") or []) if isinstance(u, str) and u.startswith("http") and u in seen_urls][:3]
         out[v["id"]] = {"verdict": v["verdict"], "resume": str(v.get("resume", ""))[:420],
-                        "analyse": str(v.get("analyse", "")).strip()[:4500],
                         "points": points, "sources": sources}
     return out
 
@@ -336,7 +329,7 @@ def claude_review(pool, cfg, env, today):
     if os.path.exists(cache_path):
         with open(cache_path, encoding="utf-8") as f:
             cache = json.load(f)
-    todo = [c for c in pool if not cache.get(review_key(c), {}).get("analyse")]
+    todo = [c for c in pool if review_key(c) not in cache]
     if todo:
         messages = [{"role": "user", "content": build_review_prompt(todo, today)}]
         payload = {"model": cl["model"], "max_tokens": cl["max_tokens"], "messages": messages,
@@ -353,6 +346,73 @@ def claude_review(pool, cfg, env, today):
         cache.update(parse_review(text, todo, seen))
         write_json(cache_path, cache)
     return {k: v for k, v in cache.items() if k in {review_key(c) for c in pool}}
+
+
+def _review_cache_path(today):
+    return os.path.join(DATA, f"review_{today.isoformat()}.json")
+
+
+def build_analysis_prompt(c, v, today):
+    kick = to_paris(parse_iso(c["commence"])).strftime("%H:%M")
+    return f"""Nous sommes le {today.isoformat()}. Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
+Le pari suivant a déjà été présélectionné d'après les cotes, puis vérifié : rédige l'ANALYSE ÉCRITE complète pour Thomas.
+
+Pari : {pick_label(c)} | {c['sport']} | {c['league']} | {c['home']} contre {c['away']} | cote {c['odds']:.2f} |
+probabilité estimée d'après les cotes {round(c['prob'] * 100)} % | coup d'envoi {kick} (heure de Paris)
+Verdict de la vérification : {v['verdict']} - {v['resume']}
+
+Fais tes recherches sur le web (actualité d'aujourd'hui et des derniers jours), puis écris 5 à 6 paragraphes courts,
+séparés par une ligne vide, dans cet ordre, SANS titres ni listes ni mise en forme :
+1) le contexte du match et l'enjeu pour chaque camp ;
+2) la forme récente des deux camps (résultats, dynamique) ;
+3) les absents, suspendus, la composition probable et la fatigue ;
+4) le style de jeu ou l'historique, seulement s'il compte vraiment ;
+5) pourquoi la cote paraît cohérente (ou non) avec ce que tu as trouvé ;
+6) les risques précis et ton avis final prudent.
+
+Règles : français simple, sans jargon. N'invente rien : si une information est introuvable, dis-le clairement.
+Ne promets aucun gain, n'écris pas "sûr" ni "garanti". Ne propose aucun autre pari. Réponds uniquement avec l'analyse."""
+
+
+def claude_analysis(c, v, cfg, env, today):
+    key = env.get("ANTHROPIC_API_KEY")
+    cl = cfg["claude"]
+    messages = [{"role": "user", "content": build_analysis_prompt(c, v, today)}]
+    payload = {"model": cl["model"], "max_tokens": cl.get("analysis_tokens", 3500), "messages": messages,
+               "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": cl.get("analysis_searches", 6),
+                          "user_location": {"type": "approximate", "country": "FR", "timezone": "Europe/Paris"}}]}
+    text = ""
+    for _ in range(4):
+        resp = anthropic_post(payload, key)
+        text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text").strip()
+        if resp.get("stop_reason") != "pause_turn":
+            break
+        messages.append({"role": "assistant", "content": resp["content"]})
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    return "\n\n".join(paragraphs)[:6000]
+
+
+def add_written_analysis(final, cfg, env, today, warnings):
+    """Ajoute à chaque pari retenu l'analyse écrite de Claude (gardée en cache pour la journée)."""
+    path = _review_cache_path(today)
+    cache = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            cache = json.load(f)
+    for c in final:
+        v, k = c["claude"], review_key(c)
+        if cache.get(k, {}).get("analyse"):
+            v["analyse"] = cache[k]["analyse"]
+            continue
+        try:
+            text = claude_analysis(c, v, cfg, env, today)
+        except Exception as e:
+            warnings.append(f"Analyse écrite impossible pour {c['home']} - {c['away']} : {str(e)[:100]}")
+            continue
+        if text:
+            v["analyse"] = text
+            cache.setdefault(k, {}).update(v)
+            write_json(path, cache)
 
 
 def demo_review(pool):
@@ -407,7 +467,10 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
             c["confidence"] = "Moyenne"
         final.append(c)
     final.sort(key=lambda c: c["claude"]["verdict"] != "confirme")  # tri stable : les « confirmé » d'abord
-    return final[:cfg["selection"]["max_picks"]], info
+    final = final[:cfg["selection"]["max_picks"]]
+    if mode != "demo" and cl.get("enabled", True):
+        add_written_analysis(final, cfg, env, today, warnings)
+    return final, info
 
 
 # ---------------------------------------------------------------- API-Football (forme / avis statistique)
