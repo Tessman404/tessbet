@@ -46,7 +46,7 @@ def load_env():
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
                     env[k.strip()] = v.strip()
-    for k in ("ODDS_API_KEY", "API_FOOTBALL_KEY", "ANTHROPIC_API_KEY", "HA_URL", "HA_TOKEN"):
+    for k in ("ODDS_API_KEY", "API_FOOTBALL_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "HA_URL", "HA_TOKEN"):
         if os.environ.get(k):
             env[k] = os.environ[k]
     return env
@@ -57,6 +57,8 @@ def load_config():
         cfg = json.load(f)
     if os.environ.get("TESSBET_MODE") in ("demo", "live"):
         cfg["mode"] = os.environ["TESSBET_MODE"]
+    if os.environ.get("TESSBET_SOURCE") in ("api", "claude_task"):
+        cfg.setdefault("claude", {})["source"] = os.environ["TESSBET_SOURCE"]
     if os.environ.get("TESSBET_NOTIFY"):
         cfg.setdefault("notify", {})["service"] = os.environ["TESSBET_NOTIFY"]
     return cfg
@@ -327,11 +329,76 @@ def parse_review(text, pool, seen_urls):
     return out
 
 
+class WaitingForClaude(RuntimeError):
+    """Mode « tâche Claude » : l'analyse a été demandée, la réponse n'est pas encore arrivée."""
+
+
+GH_REPO = "Tessman404/tessbet"
+
+
+def gh_call(method, path, token, body=None):
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{GH_REPO}/contents/{path}", method=method,
+        data=json.dumps(body).encode("utf-8") if body is not None else None,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                 "User-Agent": "Tessbet", "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return None
+        raise RuntimeError(f"GitHub : erreur {err.code}")
+
+
+def _review_cache_file(today):
+    return os.path.join(DATA, f"review_{today.isoformat()}.json")
+
+
+def task_fetch_answer(today, env):
+    """Cherche la réponse de la tâche Claude du jour et la range dans le cache de vérification. True si trouvée."""
+    token = env.get("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError("clé GITHUB_TOKEN manquante dans les réglages de l'application")
+    f = gh_call("GET", f"inbox/answer-{today.isoformat()}.json", token)
+    if not f:
+        return False
+    import base64
+    data = json.loads(base64.b64decode(f["content"]).decode("utf-8"))
+    path = _review_cache_file(today)
+    cache = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            cache = json.load(fh)
+    for k, v in (data.get("answers") or {}).items():
+        if isinstance(v, dict) and v.get("verdict") in VERDICTS:
+            cache[k] = {"verdict": v["verdict"], "resume": str(v.get("resume", ""))[:420],
+                        "points": [str(p)[:220] for p in (v.get("points") or [])][:4],
+                        "sources": [u for u in (v.get("sources") or []) if isinstance(u, str) and u.startswith("https://")][:3],
+                        "analyse": str(v.get("analyse", ""))[:6000]}
+    write_json(path, cache)
+    return True
+
+
+def task_request(pool, today, env):
+    """Dépose la demande d'analyse (matchs à vérifier) pour la tâche Claude, sans la répéter si elle existe déjà."""
+    token = env.get("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError("clé GITHUB_TOKEN manquante dans les réglages de l'application")
+    import base64
+    path = f"inbox/request-{today.isoformat()}.json"
+    if gh_call("GET", path, token):
+        return
+    items = [{"id": review_key(c), "sport": c["sport"], "league": c["league"], "home": c["home"], "away": c["away"],
+              "pick": pick_label(c), "odds": round(c["odds"], 2), "prob": round(c["prob"], 3),
+              "kickoff_paris": to_paris(parse_iso(c["commence"])).strftime("%H:%M")} for c in pool]
+    body = {"date": today.isoformat(), "items": items}
+    gh_call("PUT", path, token, {"message": f"Tessbet : demande d'analyse du {today.isoformat()}",
+                                  "content": base64.b64encode(json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")).decode("ascii")})
+
+
 def claude_review(pool, cfg, env, today):
     """Demande à Claude (avec recherche web) de vérifier chaque pari. Retourne {clé: verdict}."""
-    key = env.get("ANTHROPIC_API_KEY")
-    if not key:
-        raise RuntimeError("clé ANTHROPIC_API_KEY manquante dans .env")
     cl = cfg["claude"]
     cache_path = os.path.join(DATA, f"review_{today.isoformat()}.json")
     cache = {}
@@ -339,7 +406,19 @@ def claude_review(pool, cfg, env, today):
         with open(cache_path, encoding="utf-8") as f:
             cache = json.load(f)
     todo = [c for c in pool if review_key(c) not in cache]
+    if todo and cl.get("source") == "claude_task":
+        if not task_fetch_answer(today, env):
+            task_request(pool, today, env)
+            raise WaitingForClaude("en attente de l'analyse de Claude")
+        with open(cache_path, encoding="utf-8") as f:
+            cache = json.load(f)
+        todo = [c for c in pool if review_key(c) not in cache]
+        if todo:
+            raise WaitingForClaude("réponse de Claude incomplète : en attente")
     if todo:
+        key = env.get("ANTHROPIC_API_KEY")
+        if not key:
+            raise RuntimeError("clé ANTHROPIC_API_KEY manquante dans les réglages de l'application")
         messages = [{"role": "user", "content": build_review_prompt(todo, today)}]
         payload = {"model": cl["model"], "max_tokens": cl["max_tokens"], "messages": messages,
                    "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": cl["max_searches"],
@@ -458,6 +537,9 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
     elif cl.get("enabled", True):
         try:
             verdicts = claude_review(pool, cfg, env, today)
+        except WaitingForClaude:
+            info["waiting"] = True
+            warnings.append("En attente de l'analyse de Claude (tâche programmée).")
         except Exception as e:
             warnings.append(f"Vérification par Claude impossible : {str(e)[:140]}")
     if verdicts is None:
@@ -477,7 +559,7 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
         final.append(c)
     final.sort(key=lambda c: c["claude"]["verdict"] != "confirme")  # tri stable : les « confirmé » d'abord
     final = final[:cfg["selection"]["max_picks"]]
-    if mode != "demo" and cl.get("enabled", True):
+    if mode != "demo" and cl.get("enabled", True) and cl.get("source") != "claude_task":
         add_written_analysis(final, cfg, env, today, warnings)
     return final, info
 
@@ -694,6 +776,8 @@ def notify_phone(result, cfg, env, force=False):
 
 # ---------------------------------------------------------------- orchestration
 def build_message(n, analysed, info, cfg):
+    if info.get("waiting"):
+        return "Analyse demandée à Claude : elle s'affichera ici dès qu'il a terminé ses recherches."
     if info["unavailable"] and cfg.get("claude", {}).get("required", True):
         return "Claude n'a pas pu vérifier les paris aujourd'hui : par sécurité, Tessbet n'en propose aucun."
     dropped = info["dropped"]
@@ -750,12 +834,12 @@ def run(mode=None):
 
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
-              "message": msg, "warnings": warnings, "quota_odds_api_remaining": quota,
+              "message": msg, "waiting": bool(info.get("waiting")), "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
     write_json(os.path.join(DATA, "selections.json"), result)
     if mode != "demo":  # on garde chaque jour pour pouvoir revoir les paris donnés
         write_json(os.path.join(DATA, "history", f"{today.isoformat()}.json"), result)
-    if os.environ.get("TESSBET_NO_NOTIFY"):
+    if os.environ.get("TESSBET_NO_NOTIFY") or result["waiting"]:
         result["notification"] = "pas encore envoyée"
     else:
         try:
@@ -773,6 +857,8 @@ def notify_current(force=False):
         return "notification impossible : pas encore d'analyse"
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
+    if d.get("waiting"):
+        return "pas encore envoyée : en attente de l'analyse de Claude"
     try:
         status = notify_phone(d, load_config(), load_env(), force=force)
     except Exception as e:

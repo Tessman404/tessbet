@@ -303,7 +303,7 @@ def ha_payload():
 
 def scheduler():
     """Lance l'analyse chaque jour à l'heure choisie (et au démarrage si rien n'existe pour aujourd'hui)."""
-    last_run, tries, last_try = None, {}, 0
+    last_run, tries, last_try, last_wait = None, {}, 0, 0
     while True:
         try:
             cfg = engine.load_config()
@@ -319,7 +319,12 @@ def scheduler():
                 last_run = today  # un seul essai par jour : on ne martèle pas les API en cas d'erreur
                 run_analysis(force=True)
             d = read_json(SEL_PATH, None)
-            if (d and cfg.get("mode") == "live" and d.get("date") == today and tries.get(today, 0) < 6
+            if d and d.get("waiting") and d.get("date") == today and time.time() - last_wait > 600:
+                last_wait = time.time()  # mode « tâche Claude » : on regarde si la réponse est arrivée
+                if engine.task_fetch_answer(engine.to_paris(now_utc()).date(), engine.load_env()):
+                    run_analysis(force=True)
+                d = read_json(SEL_PATH, None)
+            if (d and not d.get("waiting") and cfg.get("mode") == "live" and d.get("date") == today and tries.get(today, 0) < 6
                     and (not d.get("notification") or str(d["notification"]).startswith(("notification impossible", "pas encore")))
                     and time.time() - last_try > 300):
                 last_try, tries[today] = time.time(), tries.get(today, 0) + 1  # HA peut ne pas être prêt au démarrage
