@@ -222,7 +222,7 @@ def get_today():
     return d
 
 
-def run_analysis(force=False):
+def run_analysis(force=False, source=None):
     cfg = engine.load_config()
     d = read_json(SEL_PATH, None)
     if d and not force and cfg.get("mode") != "demo":
@@ -230,7 +230,7 @@ def run_analysis(force=False):
         if age < 1800 and d.get("date") == today_paris() and d.get("mode") == cfg.get("mode"):
             return dict(d, throttled=True)
     p = subprocess.run([sys.executable, os.path.join(BASE, "engine.py")], capture_output=True, text=True, timeout=420,
-                       env=dict(os.environ, TESSBET_NO_NOTIFY="1"))
+                       env=dict(os.environ, TESSBET_NO_NOTIFY="1", **({"TESSBET_SOURCE": source} if source else {})))
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ["erreur inconnue"])[-1][:200]
         return {"error": f"L'analyse a échoué : {err}"}
@@ -246,7 +246,8 @@ def get_settings():
     if not isinstance(hour, int) or not 0 <= hour <= 23:
         hour = int(engine.load_config().get("auto_run_hour", 9))
     return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour,
-            "cap": get_cap_setting()}
+            "cap": get_cap_setting(), "asked": s.get("asked"),
+            "source": engine.load_config().get("claude", {}).get("source", "api")}
 
 
 def set_settings(body):
@@ -315,9 +316,17 @@ def scheduler():
             hour = engine.to_paris(now_utc()).hour
             stale = not d or d.get("date") != today or d.get("mode") != cfg.get("mode")
             ready = hour >= get_settings()["hour"] or cfg.get("mode") == "demo"
-            if stale and ready and last_run != today:
-                last_run = today  # un seul essai par jour : on ne martèle pas les API en cas d'erreur
-                run_analysis(force=True)
+            if stale and ready and last_run != today and cfg.get("mode") == "live":
+                last_run = today  # une seule demande par jour ; l'analyse ne part jamais sans ton accord
+                if get_settings().get("asked") != today:
+                    try:
+                        engine.send_phone("Tessbet : analyse du jour",
+                                          "Veux-tu lancer l'analyse du jour ? Ouvre Tessbet et confirme (Claude ou API).", "tessbet-ask")
+                    except Exception as ex:
+                        print("rappel :", str(ex)[:100], file=sys.stderr)
+                    s2 = read_json(SETTINGS_PATH, {})
+                    s2["asked"] = today
+                    engine.write_json(SETTINGS_PATH, s2)
             d = read_json(SEL_PATH, None)
             if d and d.get("waiting") and d.get("date") == today and time.time() - last_wait > 600:
                 last_wait = time.time()  # mode « tâche Claude » : on regarde si la réponse est arrivée
@@ -390,7 +399,12 @@ class Handler(BaseHTTPRequestHandler):
         elif method == "POST":
             body = self._body()
             if path == "/api/refresh":
-                res = run_analysis(force=bool(body.get("force")))
+                src = body.get("source")
+                if src not in ("api", "claude_task"):
+                    return self._send(400, {"error": "Choisis d'abord comment lancer l'analyse (Claude ou API)."})
+                if src == "api" and not body.get("confirm"):
+                    return self._send(400, {"error": "L'analyse par l'API coûte des crédits : confirmation nécessaire."})
+                res = run_analysis(force=bool(body.get("force")), source=src)
                 return self._send(500 if "error" in res else 200, res)
             if path == "/api/bets":
                 return self._send(*add_bet(body))

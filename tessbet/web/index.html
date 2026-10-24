@@ -243,7 +243,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
     <p class="summary" id="summary"></p>
     <div id="tickets" class="cols"></div>
     <p class="warn" id="warnings"></p>
-    <button class="btn refresh" id="refresh" type="button">Actualiser l'analyse</button>
+    <div id="launcher" class="panel"></div>
     <p class="note" id="disclaimer"></p>
   </section>
 
@@ -427,6 +427,7 @@ function renderToday() {
   } else {
     d.selections.forEach(s => box.append(ticket(s)));
   }
+  renderLauncher();
   document.getElementById('warnings').textContent = (d.warnings || []).length ? 'À noter : ' + d.warnings.slice(0, 3).join(' ; ') : '';
   document.getElementById('disclaimer').textContent = d.disclaimer || '';
 }
@@ -596,7 +597,7 @@ function renderSettings(st) {
   hourSel.value = String(st.hour);
   const live = el('input', { type: 'checkbox', id: 'live' }); live.checked = st.live;
   const save = async (body, ok, input) => { try { await api('settings', 'POST', body); toast(ok); } catch (err) { toast(err.message, true); if (input) input.checked = !input.checked; } };
-  auto.addEventListener('change', () => save({ auto: auto.checked }, auto.checked ? 'Analyse automatique activée.' : 'Analyse automatique désactivée : plus d\'analyse ni de notification.', auto));
+  auto.addEventListener('change', () => save({ auto: auto.checked }, auto.checked ? 'Rappel du matin activé.' : 'Rappel du matin désactivé.', auto));
   hourSel.addEventListener('change', () => save({ hour: Number(hourSel.value) }, 'Heure d\'analyse : ' + hourSel.value + ' h.'));
   live.addEventListener('change', () => save({ live: live.checked }, live.checked ? 'Suivi en direct activé.' : 'Suivi en direct désactivé.', live));
   const cap = el('input', { type: 'number', min: '1', step: '1', placeholder: 'Auto', value: st.cap ? String(st.cap) : '', inputmode: 'decimal', 'aria-label': 'Limite de mise par jour en euros' });
@@ -608,8 +609,8 @@ function renderSettings(st) {
   box.append(
     el('div', {},
       el('div', { class: 'panel' }, el('h2', { text: 'Analyse' }),
-        el('label', { class: 'autobox' }, auto, el('span', { text: 'Analyse automatique chaque matin, vers' }), hourSel),
-        el('p', { class: 'note', text: 'Tu peux aussi lancer une analyse à tout moment (même après minuit) avec « Actualiser l\'analyse » dans Aujourd\'hui.' })),
+        el('label', { class: 'autobox' }, auto, el('span', { text: 'Me proposer l\'analyse chaque matin, vers' }), hourSel),
+        el('p', { class: 'note', text: 'À l\'heure choisie, Tessbet te demande sur l\'iPhone si tu veux lancer l\'analyse : rien ne part sans ton accord. Tu peux aussi la lancer toi-même à toute heure dans Aujourd\'hui.' })),
       el('div', { class: 'panel' }, el('h2', { text: 'Notifications' }),
         el('label', { class: 'autobox' }, live, el('span', { text: 'Buts, mi-temps et résultat de mes paris' })),
         notifBtn,
@@ -628,12 +629,32 @@ async function loadToday() { state.today = await api('today'); }
 async function loadStats() { state.stats = await api('stats'); }
 async function loadBets() { state.bets = (await api('bets')).bets; }
 
-document.getElementById('refresh').addEventListener('click', async e => {
-  const b = e.currentTarget; b.disabled = true; b.textContent = 'Analyse en cours…';
-  try { state.today = await api('refresh', 'POST', { force: true }); renderToday(); toast(state.today.throttled ? 'Analyse déjà à jour (moins de 30 min).' : 'Analyse mise à jour.'); }
-  catch (err) { toast(err.message, true); }
-  b.disabled = false; b.textContent = 'Actualiser l\'analyse';
-});
+async function launch(source) {
+  if (source === 'api' && !confirm('L\'analyse par l\'API coûte des crédits sur ta clé Anthropic. Lancer quand même ?')) return;
+  const btns = document.querySelectorAll('#launcher button'); btns.forEach(x => x.disabled = true);
+  try {
+    state.today = await api('refresh', 'POST', { force: true, source, confirm: source === 'api' });
+    renderToday();
+    toast(state.today.waiting ? 'Demande envoyée à Claude : réponse en attente.' : 'Analyse mise à jour.');
+  } catch (err) { toast(err.message, true); }
+  renderLauncher();
+}
+async function renderLauncher() {
+  const box = document.getElementById('launcher');
+  let st = { source: 'api' }; try { st = await api('settings'); } catch (_) {}
+  box.replaceChildren();
+  const d = state.today || {};
+  const waitMin = d.waiting && d.generated_at ? (Date.now() - new Date(d.generated_at).getTime()) / 60000 : 0;
+  box.append(el('h2', { text: 'Analyse du jour' }),
+    el('p', { class: 'note', text: 'Rien ne se lance sans ton accord. Tu peux le faire à toute heure, même après minuit.' }));
+  if (st.source === 'claude_task') {
+    box.append(el('button', { class: 'btn small', type: 'button', text: d.waiting ? 'Revérifier la réponse de Claude' : 'Demander à Claude (sans frais d\'API)', onclick: () => launch('claude_task') }));
+    if (d.waiting) box.append(el('p', { class: 'note', text: waitMin < 20 ? 'Claude fait ses recherches. Tu peux revérifier dans quelques minutes.' : 'Claude ne répond pas ?' }));
+    if (d.waiting && waitMin >= 20) box.append(el('button', { class: 'btn small', type: 'button', text: 'Claude indisponible : utiliser l\'API (crédits)', onclick: () => launch('api') }));
+  } else {
+    box.append(el('button', { class: 'btn small', type: 'button', text: 'Lancer l\'analyse avec l\'API (crédits)', onclick: () => launch('api') }));
+  }
+}
 
 async function showTab(t) {
   document.querySelectorAll('.topbar nav button').forEach(x => x.toggleAttribute('aria-current', x.dataset.tab === t));
