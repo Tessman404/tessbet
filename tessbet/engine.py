@@ -46,7 +46,8 @@ def load_env():
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
                     env[k.strip()] = v.strip()
-    for k in ("ODDS_API_KEY", "API_FOOTBALL_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "HA_URL", "HA_TOKEN"):
+    for k in ("ODDS_API_KEY", "API_FOOTBALL_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "ROUTINE_ID", "ROUTINE_TOKEN",
+              "HA_URL", "HA_TOKEN"):
         if os.environ.get(k):
             env[k] = os.environ[k]
     return env
@@ -332,8 +333,16 @@ def parse_review(text, pool, seen_urls):
 class WaitingForClaude(RuntimeError):
     """Mode « tâche Claude » : l'analyse a été demandée, la réponse n'est pas encore arrivée."""
 
+    def __init__(self, msg="", fire=None):
+        super().__init__(msg)
+        self.fire = fire or {}
+
 
 GH_REPO = "Tessman404/tessbet-inbox"
+ROUTINE_FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/{rid}/fire"
+FIRE_ERRORS = {400: "la tâche Claude est en pause ou la demande est refusée", 401: "jeton de la tâche Claude refusé (génère-en un nouveau)",
+               403: "ton compte n'autorise pas ce déclenchement", 404: "tâche Claude introuvable (vérifie son identifiant)",
+               429: "trop de lancements : réessaie dans un moment", 500: "erreur côté Claude : réessaie", 503: "Claude est surchargé : réessaie"}
 
 
 def gh_call(method, path, token, body=None):
@@ -397,6 +406,39 @@ def task_request(pool, today, env):
                                   "content": base64.b64encode(json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")).decode("ascii")})
 
 
+def routine_launch(today, env):
+    """Réveille la tâche Claude depuis l'appli (déclencheur API). Ne lève jamais d'erreur : renvoie un état.
+    manual = pas configuré (il faut prévenir Claude dans le chat) ; fired / already / error."""
+    rid, token = env.get("ROUTINE_ID"), env.get("ROUTINE_TOKEN")
+    if not rid or not token:
+        return {"status": "manual"}
+    path = os.path.join(DATA, f"fire_{today.isoformat()}.json")
+    if os.path.exists(path) and not os.environ.get("TESSBET_REFIRE"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return dict(json.load(f), status="already")
+        except (OSError, ValueError):
+            pass
+    text = (f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {today.isoformat()}. "
+            f"Fichier à traiter : inbox/request-{today.isoformat()}.json (réponse : inbox/answer-{today.isoformat()}.json).")
+    req = urllib.request.Request(
+        ROUTINE_FIRE_URL.format(rid=urllib.parse.quote(rid, safe="")), method="POST",
+        data=json.dumps({"text": text}).encode("utf-8"),
+        headers={"Authorization": f"Bearer {token}", "anthropic-version": "2026-10-21",
+                 "Content-Type": "application/json", "User-Agent": "Tessbet"})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            res = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as err:
+        return {"status": "error", "error": FIRE_ERRORS.get(err.code, f"erreur {err.code}")}
+    except Exception as e:
+        return {"status": "error", "error": f"connexion impossible ({str(e)[:60]})"}
+    st = {"fired_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+          "session_url": res.get("claude_code_session_url")}
+    write_json(path, st)
+    return dict(st, status="fired")
+
+
 def claude_review(pool, cfg, env, today):
     """Demande à Claude (avec recherche web) de vérifier chaque pari. Retourne {clé: verdict}."""
     cl = cfg["claude"]
@@ -408,8 +450,8 @@ def claude_review(pool, cfg, env, today):
     todo = [c for c in pool if review_key(c) not in cache]
     if todo and cl.get("source") == "claude_task":
         if not task_fetch_answer(today, env):
-            task_request(pool, today, env)
-            raise WaitingForClaude("en attente de l'analyse de Claude")
+            task_request(pool, today, env)  # d'abord la demande, ensuite on réveille Claude
+            raise WaitingForClaude("en attente de l'analyse de Claude", routine_launch(today, env))
         with open(cache_path, encoding="utf-8") as f:
             cache = json.load(f)
         todo = [c for c in pool if review_key(c) not in cache]
@@ -537,9 +579,16 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
     elif cl.get("enabled", True):
         try:
             verdicts = claude_review(pool, cfg, env, today)
-        except WaitingForClaude:
+        except WaitingForClaude as w:
             info["waiting"] = True
-            warnings.append("En attente de l'analyse de Claude (tâche programmée).")
+            info["fire"] = w.fire or None
+            st = (w.fire or {}).get("status")
+            if st == "error":
+                warnings.append(f"Claude n'a pas pu être réveillé : {w.fire['error']}.")
+            elif st == "manual":
+                warnings.append("Le déclenchement automatique n'est pas réglé : demande à Claude dans le chat.")
+            else:
+                warnings.append("En attente de l'analyse de Claude.")
         except Exception as e:
             warnings.append(f"Vérification par Claude impossible : {str(e)[:140]}")
     if verdicts is None:
@@ -777,6 +826,13 @@ def notify_phone(result, cfg, env, force=False):
 # ---------------------------------------------------------------- orchestration
 def build_message(n, analysed, info, cfg):
     if info.get("waiting"):
+        st = (info.get("fire") or {}).get("status")
+        if st in ("fired", "already"):
+            return "Claude a été prévenu et fait ses recherches : le résultat s'affichera ici tout seul (compte 10 à 20 minutes)."
+        if st == "error":
+            return "La demande est prête, mais Claude n'a pas pu être réveillé. Appuie sur « Relancer Claude »."
+        if st == "manual":
+            return "La demande est prête. Le réveil automatique de Claude n'est pas encore réglé dans les réglages de l'application."
         return "Analyse demandée à Claude : elle s'affichera ici dès qu'il a terminé ses recherches."
     if info["unavailable"] and cfg.get("claude", {}).get("required", True):
         return "Claude n'a pas pu vérifier les paris aujourd'hui : par sécurité, Tessbet n'en propose aucun."
@@ -834,7 +890,8 @@ def run(mode=None):
 
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
-              "message": msg, "waiting": bool(info.get("waiting")), "warnings": warnings, "quota_odds_api_remaining": quota,
+              "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
+              "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
     write_json(os.path.join(DATA, "selections.json"), result)
     if mode != "demo":  # on garde chaque jour pour pouvoir revoir les paris donnés

@@ -1,5 +1,5 @@
 name: Tessbet
-version: "1.7.2"
+version: "1.8.0"
 slug: tessbet
 description: Paris du jour (foot, basket, tennis) vérifiés par Claude
 arch: [aarch64, amd64]
@@ -16,6 +16,8 @@ options:
   api_football_key: ""
   anthropic_api_key: ""
   github_token: ""
+  routine_id: "trig_018bZgMf24BMXFrR9fYemnqC"
+  routine_token: ""
   analysis_source: api
   mode: live
   notify_service: mobile_app_iphone_de_thomas
@@ -24,6 +26,8 @@ schema:
   api_football_key: password
   anthropic_api_key: password
   github_token: password
+  routine_id: str
+  routine_token: password
   analysis_source: list(api|claude_task)
   mode: list(demo|live)
   notify_service: str

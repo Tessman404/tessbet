@@ -629,16 +629,35 @@ async function loadToday() { state.today = await api('today'); }
 async function loadStats() { state.stats = await api('stats'); }
 async function loadBets() { state.bets = (await api('bets')).bets; }
 
-async function launch(source) {
+async function launch(source, refire) {
   if (source === 'api' && !confirm('L\'analyse par l\'API coûte des crédits sur ta clé Anthropic. Lancer quand même ?')) return;
   const btns = document.querySelectorAll('#launcher button'); btns.forEach(x => x.disabled = true);
   try {
-    state.today = await api('refresh', 'POST', { force: true, source, confirm: source === 'api' });
+    state.today = await api('refresh', 'POST', { force: true, source, confirm: source === 'api', refire: !!refire });
     renderToday();
-    toast(state.today.waiting ? 'Demande envoyée. Dis à Claude dans le chat : « lance l\'analyse Tessbet ».' : 'Analyse mise à jour.');
+    const f = state.today.fire || {};
+    if (!state.today.waiting) toast('Analyse mise à jour.');
+    else if (f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
+    else if (f.status === 'manual') toast('Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.', true);
+    else toast('Claude est prévenu. Le résultat arrivera ici tout seul.');
   } catch (err) { toast(err.message, true); }
   renderLauncher();
+  watchWaiting();
 }
+let waitTimer = null;
+function watchWaiting() {
+  clearInterval(waitTimer); waitTimer = null;
+  if (!(state.today && state.today.waiting)) return;
+  waitTimer = setInterval(async () => {  // pendant que Claude travaille, on regarde si la réponse est arrivée
+    try {
+      const d = await api('today');
+      if (d.waiting && d.date === state.today.date) return;
+      state.today = d; renderToday(); clearInterval(waitTimer); waitTimer = null;
+      toast('Claude a répondu : analyse du jour à jour.');
+    } catch (_) {}
+  }, 30000);
+}
+function hhmm(iso) { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
 async function renderLauncher() {
   const box = document.getElementById('launcher');
   let st = { source: 'api' }; try { st = await api('settings'); } catch (_) {}
@@ -648,9 +667,18 @@ async function renderLauncher() {
   box.append(el('h2', { text: 'Analyse du jour' }),
     el('p', { class: 'note', text: 'Rien ne se lance sans ton accord. Tu peux le faire à toute heure, même après minuit.' }));
   if (st.source === 'claude_task') {
-    box.append(el('button', { class: 'btn small', type: 'button', text: d.waiting ? 'Revérifier la réponse de Claude' : 'Demander à Claude (sans frais d\'API)', onclick: () => launch('claude_task') }));
-    if (d.waiting) box.append(el('p', { class: 'note', text: waitMin < 20 ? 'Demande envoyée. Dis à Claude dans le chat : « lance l\'analyse Tessbet », puis reviens revérifier ici.' : 'Claude ne répond pas ?' }));
-    if (d.waiting && waitMin >= 20) box.append(el('button', { class: 'btn small', type: 'button', text: 'Claude indisponible : utiliser l\'API (crédits)', onclick: () => launch('api') }));
+    const f = d.fire || {};
+    box.append(el('button', { class: 'btn small', type: 'button', text: d.waiting ? (waitMin < 20 ? 'Revérifier la réponse de Claude' : 'Relancer Claude') : 'Demander à Claude (sans frais d\'API)',
+      onclick: () => launch('claude_task', d.waiting && waitMin >= 20) }));
+    if (d.waiting) {
+      let msg;
+      if (f.status === 'error') msg = 'Claude n\'a pas pu être réveillé : ' + f.error + '. Tu peux réessayer avec « Relancer Claude » (après 20 min) ou en revérifiant.';
+      else if (f.status === 'manual' || !st.routine) msg = 'Le réveil automatique n\'est pas réglé : colle le jeton de la tâche Claude dans les réglages de l\'application (Paramètres > Applications > Tessbet > Configuration).';
+      else msg = 'Claude travaille' + (f.fired_at ? ' (lancé à ' + hhmm(f.fired_at) + ')' : '') + ' : le résultat s\'affichera ici tout seul, compte 10 à 20 minutes.';
+      box.append(el('p', { class: 'note', text: msg }));
+      if (waitMin >= 20) box.append(el('p', { class: 'note', text: 'Ça dure ? Tu peux relancer Claude, ou utiliser l\'API (elle coûte des crédits).' }),
+        el('button', { class: 'btn small', type: 'button', text: 'Claude indisponible : utiliser l\'API (crédits)', onclick: () => launch('api') }));
+    }
   } else {
     box.append(el('button', { class: 'btn small', type: 'button', text: 'Lancer l\'analyse avec l\'API (crédits)', onclick: () => launch('api') }));
   }
@@ -672,7 +700,7 @@ async function showTab(t) {
 document.querySelectorAll('.topbar nav button').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
 (async () => {
-  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack(); }
+  try { await Promise.all([loadToday(), loadStats(), loadBets()]); renderToday(); renderTrack(); watchWaiting(); }
   catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
 })();
 </script>

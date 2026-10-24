@@ -12,6 +12,8 @@ os.environ["ODDS_API_KEY"] = o.get("odds_api_key", "")
 os.environ["API_FOOTBALL_KEY"] = o.get("api_football_key", "")
 os.environ["ANTHROPIC_API_KEY"] = o.get("anthropic_api_key", "")
 os.environ["GITHUB_TOKEN"] = o.get("github_token", "")
+os.environ["ROUTINE_ID"] = (o.get("routine_id") or "").strip()
+os.environ["ROUTINE_TOKEN"] = (o.get("routine_token") or "").strip()
 os.environ["TESSBET_SOURCE"] = o.get("analysis_source", "api")
 os.environ["TESSBET_MODE"] = o.get("mode", "live")
 if os.environ.get("SUPERVISOR_TOKEN"):  # accès interne à Home Assistant, sans jeton à créer

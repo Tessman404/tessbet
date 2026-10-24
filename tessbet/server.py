@@ -222,7 +222,7 @@ def get_today():
     return d
 
 
-def run_analysis(force=False, source=None):
+def run_analysis(force=False, source=None, refire=False):
     cfg = engine.load_config()
     d = read_json(SEL_PATH, None)
     if d and not force and cfg.get("mode") != "demo":
@@ -230,7 +230,8 @@ def run_analysis(force=False, source=None):
         if age < 1800 and d.get("date") == today_paris() and d.get("mode") == cfg.get("mode"):
             return dict(d, throttled=True)
     p = subprocess.run([sys.executable, os.path.join(BASE, "engine.py")], capture_output=True, text=True, timeout=420,
-                       env=dict(os.environ, TESSBET_NO_NOTIFY="1", **({"TESSBET_SOURCE": source} if source else {})))
+                       env=dict(os.environ, TESSBET_NO_NOTIFY="1", **({"TESSBET_SOURCE": source} if source else {}),
+                                **({"TESSBET_REFIRE": "1"} if refire else {})))
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ["erreur inconnue"])[-1][:200]
         return {"error": f"L'analyse a échoué : {err}"}
@@ -247,7 +248,8 @@ def get_settings():
         hour = int(engine.load_config().get("auto_run_hour", 9))
     return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour,
             "cap": get_cap_setting(), "asked": s.get("asked"),
-            "source": engine.load_config().get("claude", {}).get("source", "api")}
+            "source": engine.load_config().get("claude", {}).get("source", "api"),
+            "routine": bool(os.environ.get("ROUTINE_ID") and os.environ.get("ROUTINE_TOKEN"))}
 
 
 def set_settings(body):
@@ -328,7 +330,7 @@ def scheduler():
                     s2["asked"] = today
                     engine.write_json(SETTINGS_PATH, s2)
             d = read_json(SEL_PATH, None)
-            if d and d.get("waiting") and d.get("date") == today and time.time() - last_wait > 600:
+            if d and d.get("waiting") and d.get("date") == today and time.time() - last_wait > 180:
                 last_wait = time.time()  # mode « tâche Claude » : on regarde si la réponse est arrivée
                 if engine.task_fetch_answer(engine.to_paris(now_utc()).date(), engine.load_env()):
                     run_analysis(force=True)
@@ -404,7 +406,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(400, {"error": "Choisis d'abord comment lancer l'analyse (Claude ou API)."})
                 if src == "api" and not body.get("confirm"):
                     return self._send(400, {"error": "L'analyse par l'API coûte des crédits : confirmation nécessaire."})
-                res = run_analysis(force=bool(body.get("force")), source=src)
+                res = run_analysis(force=bool(body.get("force")), source=src, refire=bool(body.get("refire")) and src == "claude_task")
                 return self._send(500 if "error" in res else 200, res)
             if path == "/api/bets":
                 return self._send(*add_bet(body))
