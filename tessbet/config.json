@@ -47,11 +47,11 @@
     "enabled": true,
     "required": true,
     "model": "claude-sonnet-5-5",
-    "max_review": 4,
-    "max_searches": 8,
+    "max_review": 6,
+    "max_searches": 15,
     "max_tokens": 4096,
     "analysis_tokens": 3500,
-    "analysis_searches": 4
+    "analysis_searches": 6
   },
 
   "api_football": {
