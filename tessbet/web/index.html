@@ -383,6 +383,12 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .rtile small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; color: var(--chalk-dim); }
 .rtile.up strong { color: var(--green); } .rtile.down strong { color: #ff7478; }
 .rtile.live { border-color: #ff5a5f; } .rtile.live strong { color: #ff9a9c; }
+.moves { margin-top: 10px; }
+.moves summary { color: var(--yellow); }
+.moveform { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.moveform select, .moveform input { min-height: 40px; border-radius: 8px; border: 1px solid #b9c8bf; padding: 0 8px; background: #fff; color: var(--ink); }
+.moveform input { width: 120px; }
+.moveform label { display: flex; align-items: center; gap: 6px; color: var(--chalk); font-size: .9rem; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -814,10 +820,11 @@ function renderRecap() {
   const live = items.filter(x => x.live && x.live.state === 'in').length;
   const tile = (label, value, sub, tab, cls = '') => el('button', { class: 'rtile ' + cls, type: 'button', onclick: () => showTab(tab) },
     el('span', { class: 'rl', text: label }), el('strong', { text: value }), el('small', { text: sub }));
-  const roi = s.bankroll_start ? s.profit / s.bankroll_start : 0;
+  const base = s.invested || s.bankroll_start;
+  const roi = base ? s.profit / base : 0;
   box.append(
     tile('Mon argent', eur(s.bankroll), (s.by_book || []).filter(x => x.n).map(x => `${x.name} ${eur(x.balance + x.pending)}`).join(' · ') || 'Aucun site', 'track'),
-    tile('Plus-value depuis le début', signedEur(s.profit), `${roi >= 0 ? '+' : '−'}${pct(Math.abs(roi), 1)} sur ${eur(s.bankroll_start)} de départ`, 'track', s.profit > 0 ? 'up' : s.profit < 0 ? 'down' : ''),
+    tile('Plus-value depuis le début', signedEur(s.profit), `${roi >= 0 ? '+' : '−'}${pct(Math.abs(roi), 1)} sur ${eur(base)} apportés`, 'track', s.profit > 0 ? 'up' : s.profit < 0 ? 'down' : ''),
     tile('En jeu', eur(s.pending), pend.length ? `${plural(pend.length, 'pari', 'paris')} · gain potentiel +${eur(pot)}` : 'Aucun pari en cours', 'track'),
     tile('En direct', live ? plural(live, 'match', 'matchs') : '–', live ? 'en cours maintenant' : items.length ? plural(items.length, 'match à venir', 'matchs à venir') : 'Rien à suivre', 'live', live ? 'live' : ''));
 }
@@ -920,11 +927,11 @@ function evolution(s) {
     const add = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (text) n.textContent = text; svg.append(n); };
     add('line', { x1: P, x2: W - P, y1: Y(s.bankroll_start), y2: Y(s.bankroll_start), stroke: '#8fb0a0', 'stroke-dasharray': '4 4', 'stroke-width': 1 });
     add('polyline', { points: pts.map((p, i) => `${X(i)},${Y(p.bankroll)}`).join(' '), fill: 'none', stroke: '#ffd23f', 'stroke-width': 3, 'stroke-linejoin': 'round' });
-    pts.forEach((p, i) => add('circle', { cx: X(i), cy: Y(p.bankroll), r: 4.5, fill: i && p.profit < 0 ? '#ff7478' : '#2fbf71' }));
+    pts.forEach((p, i) => add('circle', { cx: X(i), cy: Y(p.bankroll), r: 4.5, fill: p.move ? '#ffd23f' : i && p.profit < 0 ? '#ff7478' : '#2fbf71' }));
     add('text', { x: P, y: 14, fill: '#cfe3d8', 'font-size': 12 }, 'Max ' + eur(hi));
     add('text', { x: P, y: H - 6, fill: '#8fb0a0', 'font-size': 12 }, 'Min ' + eur(lo));
     add('text', { x: W - P, y: 14, fill: '#fff', 'font-size': 13, 'text-anchor': 'end', 'font-weight': 700 }, 'Aujourd\'hui ' + eur(s.bankroll));
-    wrap.append(el('div', { class: 'panel' }, svg, el('p', { class: 'note', text: `Départ ${eur(s.bankroll_start)} → maintenant ${eur(s.bankroll)} (${signedEur(s.profit)}). Un point = un pari terminé.` })));
+    wrap.append(el('div', { class: 'panel' }, svg, el('p', { class: 'note', text: `Départ ${eur(s.bankroll_start)} → maintenant ${eur(s.bankroll)} (${signedEur(s.profit)}). Un point = un pari terminé (jaune = retrait ou dépôt).` })));
   } else wrap.append(el('p', { class: 'note', text: 'La courbe apparaît dès ton premier pari terminé.' }));
   if (s.by_day.length) {
     wrap.append(el('h2', { class: 'section', text: 'Jour par jour' }));
@@ -967,15 +974,57 @@ function renderTrack() {
 
 /* Le solde de chaque site, juste sous le total : leur somme fait le total. */
 function booksPanel(s) {
-  const rows = s.by_book.filter(x => x.n);
-  if (!rows.length) return null;
+  const rows = s.by_book.filter(x => x.n || x.balance || x.pending || x.added || x.withdrawn);
   const list = el('ul', { class: 'books' }, rows.map(x => el('li', {},
     el('span', { class: 'bn', text: x.name }),
     el('span', { class: 'bd', text: (x.pending ? `dont ${eur(x.pending)} en jeu en plus · ` : '') + 'résultat ' + signedEur(x.profit) }),
     el('b', { text: eur(x.balance + x.pending) }))));
   if (s.unplaced > 0.004) list.append(el('li', {}, el('span', { class: 'bn', text: 'Pas encore sur un site' }), el('span', { class: 'bd', text: '' }), el('b', { text: eur(s.unplaced) })));
-  return el('div', { class: 'panel bookspanel' }, list,
+  return el('div', { class: 'panel bookspanel' }, list, moveForm(s), movesList(s),
     el('p', { class: 'note', text: 'Solde de chaque site = ce que tu y as déposé + ce que tu y as gagné ou perdu (mises en cours comprises). Un pari sans site est compté dans « Non précisé » : modifie-le pour choisir son site.' }));
+}
+
+/* Retrait vers la banque, dépôt depuis la banque, ou transfert d'un site à l'autre. */
+function moveForm(s) {
+  const books = s.books || [];
+  const opts = () => [el('option', { value: '', text: 'Choisis' }), ...books.map(b => el('option', { value: b.key, text: b.name }))];
+  const typ = el('select', { 'aria-label': 'Type de mouvement' },
+    el('option', { value: 'transfer', text: 'Transfert d\'un site à un autre' }),
+    el('option', { value: 'withdraw', text: 'Retrait vers mon compte bancaire' }),
+    el('option', { value: 'deposit', text: 'Dépôt depuis mon compte bancaire' }));
+  const from = el('select', { 'aria-label': 'Site de départ' }, opts()), to = el('select', { 'aria-label': 'Site d\'arrivée' }, opts());
+  const amount = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'Montant €', 'aria-label': 'Montant en euros', autocomplete: 'off' });
+  const lf = el('label', {}, 'De ', from), lt = el('label', {}, 'Vers ', to);
+  const sync = () => { lf.hidden = typ.value === 'deposit'; lt.hidden = typ.value === 'withdraw'; };
+  typ.addEventListener('change', sync); sync();
+  const send = async force => {
+    try {
+      await api('moves', 'POST', { type: typ.value, from: from.value, to: to.value, amount: num(amount.value), force });
+      toast({ transfer: 'Transfert enregistré.', withdraw: 'Retrait enregistré.', deposit: 'Dépôt enregistré.' }[typ.value]);
+      await loadStats(); renderTrack();
+    } catch (e) {
+      if (e.status === 409 && confirm(e.message + '\n\nEnregistrer quand même ?')) return send(true);
+      if (e.status !== 409) toast(e.message, true);
+    }
+  };
+  const form = el('div', { class: 'moveform' }, typ, lf, lt, amount, el('button', { class: 'btn small', type: 'button', text: 'Valider', onclick: () => send(false) }));
+  return el('details', { class: 'moves' }, el('summary', { text: 'Retrait, dépôt ou transfert entre sites' }), form,
+    el('p', { class: 'note', text: 'Un transfert ne change pas ton argent total. Un retrait vers ta banque le diminue, un dépôt l\'augmente. Ta plus-value ne bouge pas.' }));
+}
+
+function movesList(s) {
+  const ms = s.moves || [];
+  if (!ms.length) return null;
+  const txt = m => m.type === 'transfer' ? `${m.from_name} → ${m.to_name}` : m.type === 'withdraw' ? `Retrait ${m.from_name} → banque` : `Dépôt banque → ${m.to_name}`;
+  return el('details', { class: 'moves' }, el('summary', { text: `Mouvements d'argent (${ms.length})` }),
+    el('ul', { class: 'books' }, ms.map(m => el('li', {},
+      el('span', { class: 'bn', text: new Date(m.created).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) }),
+      el('span', { class: 'bd', text: txt(m) }),
+      el('span', {}, el('b', { text: eur(m.amount) }), ' ',
+        el('button', { class: 'mini', type: 'button', title: 'Supprimer', 'aria-label': 'Supprimer ce mouvement', text: '×', onclick: async () => {
+          if (!confirm('Supprimer ce mouvement ?')) return;
+          try { await api('moves/' + m.id, 'DELETE'); await loadStats(); renderTrack(); } catch (e) { toast(e.message, true); }
+        } }))))));
 }
 
 function renderPast(days) {

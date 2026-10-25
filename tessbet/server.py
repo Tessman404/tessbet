@@ -124,7 +124,7 @@ def _ts(s):
         return None
 
 
-def book_balances(bets):
+def book_balances(bets, moves=()):
     """Solde de chaque site, sans compter deux fois l'argent rejoué.
 
     On rejoue les mouvements dans l'ordre : une mise prend d'abord l'argent déjà sur le site (gains compris) ;
@@ -136,20 +136,43 @@ def book_balances(bets):
         if b["result"] in ("win", "lose", "void"):
             kicks = [_ts(x.get("kickoff")) for x in (b.get("legs") or [b])]
             kicks = [k for k in kicks if k]
-            events.append((max(kicks + [t0]) + 3 * 3600, 1, b))
+            settle = max(kicks + [t0]) + 3 * 3600
+            if _ts(b.get("settled_at")):  # l'heure où le résultat a été enregistré, quand on la connaît
+                settle = min(settle, _ts(b["settled_at"]))
+            events.append((settle, 1, b))
+    for m in moves:
+        events.append((_ts(m.get("created")) or 0, 2, m))
     books = {}
+
+    def book(k):
+        return books.setdefault(k, {"key": k, "name": BOOK_NAMES.get(k, "Non précisé"), "n": 0, "staked": 0.0, "profit": 0.0,
+                                    "won": 0, "deposit": 0.0, "added": 0.0, "withdrawn": 0.0, "cash": 0.0, "pending": 0.0})
+
+    def take(x, amount):  # sortir de l'argent du site ; s'il en manque, il y avait forcément été déposé avant
+        if x["cash"] < amount:
+            x["deposit"] = round(x["deposit"] + amount - x["cash"], 2)
+            x["cash"] = 0.0
+        else:
+            x["cash"] = round(x["cash"] - amount, 2)
+
     for t, kind, b in sorted(events, key=lambda e: (e[0], e[1])):
+        if kind == 2:  # mouvement d'argent : dépôt, retrait ou transfert entre deux sites
+            amt = b["amount"]
+            if b["type"] in ("withdraw", "transfer"):
+                x = book(b["from"])
+                take(x, amt)
+                x["withdrawn"] = round(x["withdrawn"] + amt, 2)
+            if b["type"] in ("deposit", "transfer"):
+                x = book(b["to"])
+                x["cash"] = round(x["cash"] + amt, 2)
+                x["added"] = round(x["added"] + amt, 2)
+            continue
         k = b.get("book") or ""
-        x = books.setdefault(k, {"key": k, "name": BOOK_NAMES.get(k, "Non précisé"), "n": 0, "staked": 0.0, "profit": 0.0,
-                                 "won": 0, "deposit": 0.0, "cash": 0.0, "pending": 0.0})
+        x = book(k)
         if kind == 0:
             x["n"] += 1
             x["staked"] = round(x["staked"] + b["stake"], 2)
-            if x["cash"] < b["stake"]:
-                x["deposit"] = round(x["deposit"] + b["stake"] - x["cash"], 2)
-                x["cash"] = 0.0
-            else:
-                x["cash"] = round(x["cash"] - b["stake"], 2)
+            take(x, b["stake"])
             if b["result"] == "pending":
                 x["pending"] = round(x["pending"] + b["stake"], 2)
         else:
@@ -169,25 +192,36 @@ def compute_stats(d):
     pending = round(sum(b["stake"] for b in bets if b["result"] == "pending"), 2)
     played = [b for b in settled if b["result"] in ("win", "lose")]
     staked_played = sum(b["stake"] for b in played)
-    bankroll = round(d["bankroll_start"] + profit, 2)
+    moves = sorted(d.get("moves", []), key=lambda m: m.get("created", ""))
+    added = round(sum(m["amount"] for m in moves if m["type"] == "deposit"), 2)      # argent ajouté depuis la banque
+    withdrawn = round(sum(m["amount"] for m in moves if m["type"] == "withdraw"), 2)  # argent retiré vers la banque
+    bankroll = round(d["bankroll_start"] + added - withdrawn + profit, 2)
     today = today_paris()
     staked_today = round(sum(b["stake"] for b in bets if b["date"] == today), 2)
     manual = get_cap_setting()
     cap = round(manual if manual else cfg.get("daily_cap_pct", 0.05) * bankroll, 2)
     # évolution : argent total après chaque pari terminé, et résultat par jour
     run, series, by_day = d["bankroll_start"], [], {}
-    for b in settled:
+    timeline = [(b.get("created", ""), "bet", b) for b in settled] + [(m.get("created", ""), "move", m) for m in moves if m["type"] != "transfer"]
+    for _, kind, b in sorted(timeline, key=lambda x: x[0]):
+        if kind == "move":
+            delta = b["amount"] if b["type"] == "deposit" else -b["amount"]
+            run = round(run + delta, 2)
+            series.append({"date": b["created"][:10], "label": ("Dépôt " if delta > 0 else "Retrait ") + BOOK_NAMES.get(b.get("to") or b.get("from"), ""),
+                           "profit": 0.0, "move": delta, "bankroll": run})
+            continue
         p = bet_profit(b)
         run = round(run + p, 2)
         series.append({"date": b["date"], "label": b["pick"], "profit": p, "bankroll": run})
         day = by_day.setdefault(b["date"], {"date": b["date"], "n": 0, "staked": 0.0, "profit": 0.0})
         day["n"] += 1; day["staked"] = round(day["staked"] + b["stake"], 2); day["profit"] = round(day["profit"] + p, 2)
     # répartition par bookmaker : argent déposé (estimé), en jeu, gagné ou perdu, et solde sur le site
-    books = book_balances(bets)
+    books = book_balances(bets, moves)
     by_book = sorted(books.values(), key=lambda x: -x["balance"])
     unplaced = round(d["bankroll_start"] - sum(x["deposit"] for x in by_book), 2)
     return {
-        "unplaced": unplaced,
+        "unplaced": unplaced, "added": added, "withdrawn": withdrawn, "invested": round(d["bankroll_start"] + added, 2),
+        "moves": [dict(m, from_name=BOOK_NAMES.get(m.get("from"), ""), to_name=BOOK_NAMES.get(m.get("to"), "")) for m in reversed(moves)],
         "bankroll_start": d["bankroll_start"], "bankroll": bankroll, "profit": profit, "pending": pending,
         "roi": round(profit / staked_played, 4) if staked_played else None,
         "win_rate": round(sum(1 for b in played if b["result"] == "win") / len(played), 4) if played else None,
@@ -285,6 +319,7 @@ def set_result(bet_id, result):
         for b in d["bets"]:
             if b["id"] == bet_id:
                 b["result"] = result
+                b["settled_at"] = now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
                 for leg in b.get("legs") or []:  # résultat global d'un combiné : les matchs pas encore tranchés suivent
                     if result == "pending" or (leg.get("result", "pending") == "pending" and result in ("win", "void")):
                         leg["result"] = result
@@ -307,6 +342,7 @@ def set_leg_result(bet_id, idx, result):
                 return 404, {"error": "Match introuvable dans ce combiné."}
             legs[idx]["result"] = result
             b["result"] = combo_result(legs)
+            b["settled_at"] = now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
             engine.write_json(BETS_PATH, d)
             return 200, {"bet": b}
     return 404, {"error": "Pari introuvable."}
@@ -354,6 +390,52 @@ def delete_bet(bet_id):
         d["bets"] = [b for b in d["bets"] if b["id"] != bet_id]
         if len(d["bets"]) == n:
             return 404, {"error": "Pari introuvable."}
+        engine.write_json(BETS_PATH, d)
+        return 200, {"ok": True}
+
+
+def add_move(body):
+    """Retrait vers la banque, dépôt depuis la banque, ou transfert d'un site à un autre."""
+    typ = body.get("type")
+    if typ not in ("deposit", "withdraw", "transfer"):
+        return 400, {"error": "Choisis : retrait, dépôt ou transfert."}
+    try:
+        amount = round(float(str(body.get("amount")).replace(",", ".")), 2)
+    except (TypeError, ValueError):
+        return 400, {"error": "Montant invalide."}
+    if amount <= 0:
+        return 400, {"error": "Le montant doit être positif."}
+    src, dst = str(body.get("from") or "").lower(), str(body.get("to") or "").lower()
+    if typ in ("withdraw", "transfer") and src not in BOOK_NAMES:
+        return 400, {"error": "Choisis le site d'où part l'argent."}
+    if typ in ("deposit", "transfer") and dst not in BOOK_NAMES:
+        return 400, {"error": "Choisis le site où arrive l'argent."}
+    if typ == "transfer" and src == dst:
+        return 400, {"error": "Choisis deux sites différents."}
+    with LOCK:
+        d = load_bets()
+        if typ != "deposit" and not body.get("force"):
+            have = book_balances(d["bets"], d.get("moves", [])).get(src, {}).get("balance", 0.0)
+            if amount > have + 1e-9:
+                return 409, {"error": f"D'après Tessbet, il n'y a que {have:.2f} € disponibles sur {BOOK_NAMES[src]}.".replace(".", ",", 1),
+                             "needs_force": True}
+        m = {"id": uuid.uuid4().hex[:8], "created": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"), "type": typ, "amount": amount}
+        if typ != "deposit":
+            m["from"] = src
+        if typ != "withdraw":
+            m["to"] = dst
+        d.setdefault("moves", []).append(m)
+        engine.write_json(BETS_PATH, d)
+        return 200, {"move": m}
+
+
+def delete_move(move_id):
+    with LOCK:
+        d = load_bets()
+        n = len(d.get("moves", []))
+        d["moves"] = [m for m in d.get("moves", []) if m["id"] != move_id]
+        if len(d["moves"]) == n:
+            return 404, {"error": "Mouvement introuvable."}
         engine.write_json(BETS_PATH, d)
         return 200, {"ok": True}
 
@@ -676,6 +758,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/notify":
                 st = engine.notify_current(force=True)
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
+            if path == "/api/moves":
+                return self._send(*add_move(body))
             if path == "/api/bankroll":
                 return self._send(*set_bankroll(body))
             if path.startswith("/api/bets/") and path.count("/") == 5 and path.split("/")[4] == "legs" and path.split("/")[5].isdigit():
@@ -684,6 +768,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(*update_bet(path.split("/")[3], body))
             if path.startswith("/api/bets/") and path.endswith("/result"):
                 return self._send(*set_result(path.split("/")[3], body.get("result")))
+        elif method == "DELETE" and path.startswith("/api/moves/"):
+            return self._send(*delete_move(path.split("/")[3]))
         elif method == "DELETE" and path.startswith("/api/bets/"):
             return self._send(*delete_bet(path.split("/")[3]))
         self._send(404, {"error": "Introuvable."})
