@@ -409,6 +409,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .why-extra { margin: 0 0 18px; padding: 12px 18px; }
 .why-extra .why { margin-top: 0; }
 .winteam { display: inline-block; padding: 0 7px; border-radius: 6px; background: rgba(255,255,255,.88); color: #157a45; font-weight: 800; }
+.more-bets { display: block; margin: 4px auto 8px; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -451,7 +452,6 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
     <button type="button" data-tab="bet">Matchs</button>
     <button type="button" data-tab="live">En direct</button>
     <button type="button" data-tab="track">Mes mises</button>
-    <button type="button" data-tab="past">Passés</button>
     <button type="button" data-tab="settings">Réglages</button>
   </nav>
 </div></div>
@@ -1026,7 +1026,13 @@ function renderTrack() {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucune mise pour l\'instant' }),
       el('p', { text: 'Quand tu paries, appuie sur « J\'ai parié » sur un ticket, ou compose ton pari (seul ou en combiné) dans l\'onglet Matchs.' })));
   } else {
-    state.bets.forEach(b => box.append(betRow(b)));
+    const n = state.betsShown || 2;  // les 2 derniers paris, puis « Voir les précédents »
+    state.bets.slice(0, n).forEach(b => box.append(betRow(b)));
+    const rest = state.bets.length - n;
+    if (rest > 0) box.append(el('button', { class: 'btn small refresh more-bets', type: 'button', text: `Voir les précédents (${rest})`,
+      onclick: () => { state.betsShown = n + 10; renderTrack(); } }));
+    else if (n > 2) box.append(el('button', { class: 'btn small refresh more-bets', type: 'button', text: 'Réduire',
+      onclick: () => { state.betsShown = 2; renderTrack(); } }));
   }
   box.append(evolution(s));
 }
