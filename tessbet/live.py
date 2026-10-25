@@ -246,6 +246,13 @@ def bet_status(bet, lv):
     if mine > other:
         return {"code": "winning", "text": "Tu gagnes pour l'instant"}
     if mine == other:
+        g = re.match(r"set \d+ : (\d+)-(\d+)", lv.get("clock") or "")  # tennis : sets à égalité, on regarde le set en cours
+        if g:
+            gh, ga = int(g.group(1)), int(g.group(2))
+            gm, go = (gh, ga) if side != "away" else (ga, gh)
+            if gm != go:
+                return {"code": "winning" if gm > go else "losing",
+                        "text": "Mène dans le set en cours" if gm > go else "Menée dans le set en cours"}
         return {"code": "draw", "text": "Égalité : pas encore gagné"}
     return {"code": "losing", "text": "Tu perds pour l'instant"}
 
