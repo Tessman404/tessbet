@@ -894,7 +894,7 @@ function comboLegs(b) {
     const r = l.result || 'pending', code = l.status && l.status.code;
     const hint = r === 'pending' && (code === 'won' || code === 'lost') ? (code === 'won' ? 'win' : 'lose') : null;
     return el('li', {},
-      el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: `${l.match} – cote ${odds(l.odds)}` + liveSuffix(l) })),
+      el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: `${l.match}` + (whenTxt(startOf(l)) ? ` – ${whenTxt(startOf(l))}` : '') + ` – cote ${odds(l.odds)}` + liveSuffix(l) })),
       r === 'pending'
         ? el('span', { class: 'lgb' }, [['win', '✓'], ['lose', '✗'], ['void', '○']].map(([k, sym]) =>
             el('button', { class: 'mini ' + k + (hint === k ? ' hint' : ''), type: 'button', title: names[k], 'aria-label': `${names[k]} : ${l.pick}`, text: sym, onclick: setLeg(i, k) })))
@@ -936,7 +936,7 @@ function betRow(b) {
   } }));
   const sub = combo
     ? `Cote ${odds(b.odds)}` + (eff !== b.odds ? ` (${odds(eff)} sans le match annulé)` : '') + ` – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b)
-    : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + liveSuffix(b);
+    : `${b.match} – ${whenTxt(startOf(b)) || fmtDay(b.date)} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + liveSuffix(b);
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
       el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick + (b.tier === 'outsider' ? ' 🎲' : b.tier === 'value' ? ' 💡' : '') }), el('div', { class: 'sub', text: sub }), potential),
