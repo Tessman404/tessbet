@@ -297,7 +297,7 @@ def tick(now=None):
             st["score"] = cur["score"]
         if first and "score" not in st:
             st["score"] = cur["score"]
-        st["live"] = {"score": cur["score"], "clock": cur["clock"], "state": cur["state"]}
+        st["live"] = {"score": cur["score"], "clock": cur["clock"], "state": cur["state"], "start": cur.get("start")}
         if cur["state"] == "post" and st.get("final"):
             st["done"] = True
         elif cur["state"] == "in":
@@ -315,6 +315,55 @@ def tick(now=None):
     return state
 
 
+def board(bets, state, now=None):
+    """Les matchs de mes paris en cours, pour la tuile « En direct » de l'aperçu Home Assistant."""
+    rows = []
+    for b in bets:
+        if b.get("result") != "pending":
+            continue
+        legs = b.get("legs") or [b]
+        combo = f"Combiné de {len(legs)} matchs" if b.get("legs") else ""
+        for i, leg in enumerate(legs):
+            lv = state.get(f"{b['id']}:{i}" if b.get("legs") else b["id"], {}).get("live") or {}
+            home, away = split_match(leg.get("match"))
+            st = bet_status(leg, lv) if lv else None
+            res = leg.get("result", "pending") if b.get("legs") else "pending"
+            rows.append({
+                "sport": leg.get("sport") or b.get("sport") or "football", "home": home or leg.get("match", ""), "away": away or "",
+                "pick": leg.get("pick", ""), "combo": combo, "odds": leg.get("odds"),
+                "score": lv.get("score"), "clock": lv.get("clock", ""), "state": lv.get("state", "pre"),
+                "start": lv.get("start") or leg.get("kickoff") or "", "result": res,
+                "status": {"win": "Gagné", "lose": "Perdu", "void": "Annulé"}.get(res) or (st or {}).get("text", ""),
+                "code": {"win": "won", "lose": "lost", "void": "void"}.get(res) or (st or {}).get("code", ""),
+            })
+    order = {"in": 0, "pre": 1, "post": 2}
+    rows.sort(key=lambda r: (order.get(r["state"], 1), r["start"] or "9"))
+    return rows
+
+
+_last_pub = {"sig": None, "t": 0}
+
+
+def publish(now=None):
+    """Met à jour le capteur sensor.tessbet_direct dans Home Assistant (seulement si quelque chose a changé)."""
+    now = now or time.time()
+    rows = board(_read("bets.json", {}).get("bets", []), _read("live.json", {}))
+    sig = json.dumps(rows, sort_keys=True)
+    if sig == _last_pub["sig"] and now - _last_pub["t"] < 600:
+        return False
+    env = engine.load_env()
+    base, token = env.get("HA_URL", "").rstrip("/"), env.get("HA_TOKEN", "")
+    if not base or not token:
+        return False
+    engine.ha_post(f"{base}/api/states/sensor.tessbet_direct", token, {
+        "state": len(rows),
+        "attributes": {"friendly_name": "Tessbet en direct", "icon": "mdi:scoreboard-outline", "unit_of_measurement": "matchs",
+                       "live": sum(r["state"] == "in" for r in rows), "matches": rows,
+                       "updated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}})
+    _last_pub.update(sig=sig, t=now)
+    return True
+
+
 def run_loop():
     while True:
         wait = 120
@@ -324,4 +373,8 @@ def run_loop():
                 wait = 30 if any(s.get("live", {}).get("state") == "in" for s in state.values()) else 60
         except Exception as e:  # le suivi ne doit jamais s'arrêter
             print("suivi direct :", e, file=sys.stderr)
+        try:
+            publish()
+        except Exception as e:
+            print("tuile en direct :", str(e)[:100], file=sys.stderr)
         time.sleep(wait)

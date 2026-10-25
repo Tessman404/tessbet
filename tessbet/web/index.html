@@ -964,6 +964,17 @@ function renderPast(days) {
 
 /* ---------------- En direct ---------------- */
 let liveTimer = null;
+/* « Aujourd'hui 21:00 », « Demain 02:10 » ou « sam. 24 oct. 21:00 » (heure de Paris). */
+function whenTxt(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
+  const day = d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const t = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' });
+  const lab = day === parisToday() ? 'Aujourd\'hui' : day === addDays(parisToday(), 1) ? 'Demain' : day === addDays(parisToday(), -1) ? 'Hier'
+    : d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' });
+  return `${lab} à ${t}`;
+}
+const startOf = x => (x.live && x.live.start) || x.kickoff || '';
 const badgeOf = (st, l, after = '') => st ? el('div', { class: 'badge ' + st.code, text: (st.code === 'won' ? '✅ ' : st.code === 'lost' ? '❌ ' : st.code === 'winning' ? '🟢 ' : st.code === 'losing' ? '🔴 ' : '🟡 ') + st.text + after })
   : el('div', { class: 'badge none', text: l && l.state === 'in' ? 'Statut indisponible' : 'Pas encore commencé' });
 
@@ -975,7 +986,7 @@ function liveCard(b) {
   const badge = badgeOf(st, l, st && (st.code === 'won' || st.code === 'lost') ? ' (match terminé)' : '');
   const confirm = (r) => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await loadStats(); await renderLive(); toast('Résultat enregistré.'); } catch (e) { toast(e.message, true); } };
   return el('div', { class: 'livecard' },
-    el('div', { class: 'lt' }, el('span', { text: `${ball(b)}${b.kickoff ? new Date(b.kickoff).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}` }),
+    el('div', { class: 'lt' }, el('span', { text: `${ball(b)}${whenTxt(startOf(b)) || fmtDay(b.date)}` }),
       stateTxt ? el('span', { text: stateTxt }) : el('span', { class: 'dot', text: '● EN DIRECT ' + (l.clock || '') })),
     el('div', { class: 'teams' }, el('span', { text: home || b.match }),
       el('span', { class: 'score', text: l ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
@@ -995,7 +1006,7 @@ function liveComboCard(b) {
     const sc = lv ? `${lv.score[0]}-${lv.score[1]}` : '–';
     const clock = lv ? (lv.state === 'in' ? ' ' + (lv.clock || '') : lv.state === 'post' ? ' fini' : '') : '';
     return el('li', {},
-      el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: l.match })),
+      el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: l.match + (whenTxt(startOf(l)) ? ' · ' + whenTxt(startOf(l)) : '') })),
       el('span', { class: 'lsc', text: sc + clock }),
       el('span', { class: 'lst ' + code, text: r !== 'pending' ? done[r] : st ? st.text : 'Pas commencé' }),
       r === 'pending' && (code === 'won' || code === 'lost')
