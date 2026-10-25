@@ -370,6 +370,8 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .bookspanel .note { margin-top: 8px; }
 .boostrow { margin-top: 10px; align-items: end; }
 .boostrow .note2 { margin: 0; }
+.gainp { margin-top: 4px; font-size: .9rem; color: var(--chalk); }
+.gainp b { color: var(--green); font-size: 1rem; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -831,6 +833,7 @@ function betRow(b) {
   const profit = b.result === 'win' ? gainOf(b) : b.result === 'lose' ? -b.stake : 0;
   const label = { win: 'Gagné', lose: 'Perdu', void: 'Annulé', pending: 'En cours' }[b.result];
   const res = el('span', { class: 'res ' + (profit > 0 ? 'pos' : profit < 0 ? 'neg' : ''), text: b.result === 'pending' ? 'En cours' : `${label} ${profit ? signedEur(profit) : ''}`.trim() });
+  const potential = b.result === 'pending' ? el('div', { class: 'gainp' }, 'Gain potentiel ', el('b', { text: '+' + eur(gainOf(b)) }), ` (retour ${eur(b.stake + gainOf(b))})`) : null;
   const setRes = r => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await reloadBets(); } catch (e) { toast(e.message, true); } };
   const btns = el('div', { class: 'btns' });
   if (b.result === 'pending') {
@@ -860,7 +863,7 @@ function betRow(b) {
     : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + liveSuffix(b);
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick }), el('div', { class: 'sub', text: sub })),
+      el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick }), el('div', { class: 'sub', text: sub }), potential),
       res),
     combo ? comboLegs(b) : null,
     combo && b.result === 'pending' && b.status ? el('div', { class: 'badge ' + b.status.code, text: b.status.text }) : null,
