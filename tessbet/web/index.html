@@ -368,6 +368,8 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .books b { font: 700 1.3rem/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
 .bookspanel { margin-bottom: 18px; }
 .bookspanel .note { margin-top: 8px; }
+.boostrow { margin-top: 10px; align-items: end; }
+.boostrow .note2 { margin: 0; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -802,6 +804,8 @@ function renderToday() {
 
 /* ---------------- Mes mises ---------------- */
 const liveSuffix = x => x.live ? (x.live.state === 'in' ? ` – 🔴 en direct ${x.live.score[0]}-${x.live.score[1]} (${x.live.clock})` : x.live.state === 'post' ? ` – terminé ${x.live.score[0]}-${x.live.score[1]}` : '') : '';
+const gainOf = b => b.win_profit != null ? b.win_profit : b.stake * ((b.eff_odds || b.odds) - 1) * (1 + (b.boost || 0) / 100);
+const boostTxt = b => b.boost ? ` – boost +${String(b.boost).replace('.', ',')} %` : '';
 const reloadBets = async () => { await loadStats(); await loadBets(); renderTrack(); };
 
 /* Les matchs d'un combiné : chacun se valide séparément, le combiné s'en déduit. */
@@ -824,7 +828,7 @@ function comboLegs(b) {
 function betRow(b) {
   const combo = !!(b.legs && b.legs.length);
   const eff = b.eff_odds || b.odds;
-  const profit = b.result === 'win' ? b.stake * (eff - 1) : b.result === 'lose' ? -b.stake : 0;
+  const profit = b.result === 'win' ? gainOf(b) : b.result === 'lose' ? -b.stake : 0;
   const label = { win: 'Gagné', lose: 'Perdu', void: 'Annulé', pending: 'En cours' }[b.result];
   const res = el('span', { class: 'res ' + (profit > 0 ? 'pos' : profit < 0 ? 'neg' : ''), text: b.result === 'pending' ? 'En cours' : `${label} ${profit ? signedEur(profit) : ''}`.trim() });
   const setRes = r => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await reloadBets(); } catch (e) { toast(e.message, true); } };
@@ -840,19 +844,20 @@ function betRow(b) {
   const es = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(b.stake), inputmode: 'decimal', 'aria-label': 'Mise' });
   const eb = el('select', { 'aria-label': 'Site' }, el('option', { value: '', text: 'Non précisé' }), state.stats.books.map(bk => el('option', { value: bk.key, text: bk.name })));
   eb.value = b.book || '';
-  const edit = el('div', { class: 'edit' }, el('label', { text: 'Site' }), eb, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es,
+  const ebo = el('input', { type: 'text', inputmode: 'decimal', value: b.boost ? String(b.boost).replace('.', ',') : '', placeholder: '0', 'aria-label': 'Boost en %' });
+  const edit = el('div', { class: 'edit' }, el('label', { text: 'Site' }), eb, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es, el('label', { text: 'Boost (%)' }), ebo,
     el('button', { class: 'btn small', type: 'button', text: 'Valider', onclick: async () => {
-      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value), book: eb.value }); await reloadBets(); toast('Pari modifié.'); }
+      try { await api('bets/' + b.id, 'POST', { odds: Number(eo.value), stake: Number(es.value), book: eb.value, boost: ebo.value.trim() === '' ? 0 : num(ebo.value) }); await reloadBets(); toast('Pari modifié.'); }
       catch (e) { toast(e.message, true); }
     } }));
-  btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Modifier cote / mise', onclick: () => edit.classList.toggle('open') }));
+  btns.append(el('button', { class: 'btn small void', type: 'button', text: 'Modifier cote / mise / boost', onclick: () => edit.classList.toggle('open') }));
   btns.append(el('button', { class: 'btn small del', type: 'button', text: 'Supprimer', onclick: async () => {
     if (!confirm('Supprimer ce pari de l\'historique ?')) return;
     try { await api('bets/' + b.id, 'DELETE'); await reloadBets(); } catch (e) { toast(e.message, true); }
   } }));
   const sub = combo
-    ? `Cote ${odds(b.odds)}` + (eff !== b.odds ? ` (${odds(eff)} sans le match annulé)` : '') + ` – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '')
-    : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + liveSuffix(b);
+    ? `Cote ${odds(b.odds)}` + (eff !== b.odds ? ` (${odds(eff)} sans le match annulé)` : '') + ` – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b)
+    : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + liveSuffix(b);
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
       el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick }), el('div', { class: 'sub', text: sub })),
@@ -975,7 +980,7 @@ function liveCard(b) {
     el('div', { class: 'teams' }, el('span', { text: home || b.match }),
       el('span', { class: 'score', text: l ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
     badge,
-    el('div', { class: 'mine', text: `Mon pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + ` – gain possible ${eur(b.stake * ((b.eff_odds || b.odds) - 1))}` }),
+    el('div', { class: 'mine', text: `Mon pari : ${b.pick} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + ` – gain possible ${eur(gainOf(b))}` }),
     b.result === 'pending' && st && (st.code === 'won' || st.code === 'lost')
       ? el('div', { class: 'btns' }, el('button', { class: 'btn small ' + (st.code === 'won' ? 'win' : 'lose'), type: 'button', text: st.code === 'won' ? 'Valider : gagné' : 'Valider : perdu', onclick: confirm(st.code === 'won' ? 'win' : 'lose') })) : null);
 }
@@ -1001,7 +1006,7 @@ function liveComboCard(b) {
     el('div', { class: 'lt' }, el('span', { text: `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` }), el('span', { text: `cote ${odds(b.odds)}` })),
     el('ul', { class: 'legs' }, rows),
     badgeOf(b.status, null),
-    el('div', { class: 'mine', text: `Mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + ` – gain possible ${eur(b.stake * (eff - 1))}` }));
+    el('div', { class: 'mine', text: `Mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + ` – gain possible ${eur(gainOf(b))}` }));
 }
 async function renderLive() {
   const box = document.getElementById('live-box');
@@ -1178,7 +1183,8 @@ function payBlock() {
   const refresh = () => {
     const st = num(s.stake) > 0 ? num(s.stake) : 0;
     const tot = combo ? comboOdds(s) : null;
-    const out = combo ? st * (tot - 1) : s.legs.reduce((sum, l) => sum + st * (l.odds - 1), 0);
+    const bst = num(s.boost) > 0 ? num(s.boost) : 0;
+    const out = (combo ? st * (tot - 1) : s.legs.reduce((sum, l) => sum + st * (l.odds - 1), 0)) * (1 + bst / 100);
     const staked = combo ? st : st * n;
     gain.textContent = st ? eur(out) : '–';
     calc.hidden = !combo || s.total == null;
@@ -1187,6 +1193,8 @@ function payBlock() {
     note.textContent = left == null ? '' : staked > left + 1e-9 ? `Tu dépasses ta limite du jour (il te reste ${eur(left)}).` : `Il te reste ${eur(left)} sur ta limite du jour.`;
   };
   stake.addEventListener('input', () => { s.stake = stake.value; refresh(); });
+  const boost = el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', 'aria-label': 'Boost du site en %', value: s.boost || '' });
+  boost.addEventListener('input', () => { s.boost = boost.value; refresh(); });
   totIn.addEventListener('input', () => { const v = num(totIn.value); s.total = v > 1 ? round2(v) : null; refresh(); });
   const left = combo
     ? el('div', {}, el('small', { text: 'Cote totale' }), totIn, el('div', {}, calc))
@@ -1195,6 +1203,7 @@ function payBlock() {
   return el('div', {},
     el('div', { class: 'perf', 'aria-hidden': 'true' }),
     el('div', { class: 'pay' }, el('div', {}, el('label', { text: 'Site' }), site), el('div', {}, el('label', { text: combo ? 'Mise' : n > 1 ? 'Mise par pari' : 'Mise' }), stake)),
+    el('div', { class: 'pay boostrow' }, el('p', { class: 'note2', text: 'Boost du site (ex. Winamax +5 % ou +10 % sur le gain). Laisse vide s\'il n\'y en a pas.' }), el('div', {}, el('label', { text: 'Boost (%)' }), boost)),
     el('div', { class: 'stubbox' }, left, el('div', { class: 'r' }, el('small', { text: 'Gain possible' }), gain)),
     note,
     combo ? el('p', { class: 'note2', text: 'Un combiné est perdu dès qu\'un seul match est perdu. Si un match est annulé, il est retiré de la cote.' }) : null,
@@ -1231,17 +1240,19 @@ async function saveSlip(force) {
   if (!s.book) return toast('Choisis chez quel site tu as parié.', true);
   const stake = num(s.stake);
   if (!(stake > 0)) return toast('Indique ta mise.', true);
+  const bst = String(s.boost || '').trim() === '' ? 0 : num(s.boost);
+  if (!(bst >= 0 && bst <= 200)) return toast('Boost invalide (entre 0 et 200 %).', true);
   const leg = l => ({ match: l.match, pick: l.pick, odds: l.odds, sport: l.sport, league_key: l.league_key, pick_team: l.pick_team, kickoff: l.kickoff });
   const combo = isCombo(s);
   try {
-    if (combo) await api('bets', 'POST', { legs: s.legs.map(leg), odds: comboOdds(s), stake, book: s.book, force });
-    else for (const l of [...s.legs]) { await api('bets', 'POST', { ...leg(l), stake, book: s.book, force }); s.legs = s.legs.filter(x => x !== l); }
+    if (combo) await api('bets', 'POST', { legs: s.legs.map(leg), odds: comboOdds(s), stake, book: s.book, boost: bst, force });
+    else for (const l of [...s.legs]) { await api('bets', 'POST', { ...leg(l), stake, book: s.book, boost: bst, force }); s.legs = s.legs.filter(x => x !== l); }
   } catch (e) {
     if (e.status === 409) { if (confirm(e.message + '\n\nEnregistrer quand même ?')) return saveSlip(true); return; }
     renderBet(); toast(e.message, true); return;
   }
   const n = s.legs.length;
-  s.legs = []; s.total = null; s.stake = '';
+  s.legs = []; s.total = null; s.stake = ''; s.boost = '';
   toast(combo ? `Combiné de ${n} matchs enregistré dans « Mes mises ».` : 'Pari enregistré dans « Mes mises ».');
   await showTab('track');
 }

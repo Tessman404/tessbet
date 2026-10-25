@@ -73,9 +73,30 @@ def combo_result(legs):
     return "void" if all(r == "void" for r in rs) else "win"
 
 
+def boost_of(b):
+    """Boost du site en % (ex. Winamax +10 %) : il augmente le gain net d'un pari gagné."""
+    try:
+        return max(0.0, min(200.0, float(b.get("boost") or 0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def win_profit(b):
+    """Gain net si le pari est gagné : mise × (cote − 1), augmenté du boost."""
+    return round(b["stake"] * (eff_odds(b) - 1) * (1 + boost_of(b) / 100), 2)
+
+
+def clean_boost(v):
+    try:
+        v = float(str(v).replace(",", ".")) if v not in (None, "") else 0.0
+    except ValueError:
+        return None
+    return round(v, 2) if 0 <= v <= 200 else None
+
+
 def bet_profit(b):
     if b["result"] == "win":
-        return round(b["stake"] * (eff_odds(b) - 1), 2)
+        return win_profit(b)
     if b["result"] == "lose":
         return -b["stake"]
     return 0.0
@@ -88,7 +109,7 @@ BOOK_NAMES = {"winamax": "Winamax", "unibet": "Unibet", "betclic": "Betclic", "p
 def returned(b, result=None):
     """Argent rendu par le site pour ce pari selon son résultat (la mise est retirée du compte au moment du pari)."""
     r = result or b["result"]
-    return b["stake"] * eff_odds(b) if r == "win" else b["stake"] if r == "void" else 0.0
+    return b["stake"] + win_profit(b) if r == "win" else b["stake"] if r == "void" else 0.0
 
 
 def get_cap_setting():
@@ -233,6 +254,11 @@ def add_bet(body):
         return 400, {"error": "Il manque une information (match, pari, cote ou mise)."}
     book = str(body.get("book", "")).strip().lower()
     book = book if book in BOOK_NAMES else ""
+    boost = clean_boost(body.get("boost"))
+    if boost is None:
+        return 400, {"error": "Boost invalide (entre 0 et 200 %)."}
+    if boost:
+        extra["boost"] = boost
     with LOCK:
         d = load_bets()
         st = compute_stats(d)
@@ -300,6 +326,14 @@ def update_bet(bet_id, body):
                 return 400, {"error": "Cote ou mise invalide."}
             if odds <= 1 or stake <= 0:
                 return 400, {"error": "La cote doit dépasser 1 et la mise être positive."}
+            if "boost" in body:
+                boost = clean_boost(body["boost"])
+                if boost is None:
+                    return 400, {"error": "Boost invalide (entre 0 et 200 %)."}
+                if boost:
+                    b["boost"] = boost
+                else:
+                    b.pop("boost", None)
             b.update(odds=round(odds, 2), stake=round(stake, 2))
             if "book" in body:
                 k = str(body["book"]).strip().lower()
@@ -450,10 +484,10 @@ def bets_payload():
                 one = dict(leg, live=lv)
                 one["status"] = live.bet_status({"match": leg["match"], "pick": leg["pick"], "pick_team": leg.get("pick_team")}, lv)
                 legs.append(one)
-            out.append(dict(b, legs=legs, status=live.combo_status(legs), eff_odds=eff_odds(b)))
+            out.append(dict(b, legs=legs, status=live.combo_status(legs), eff_odds=eff_odds(b), win_profit=win_profit(b)))
         else:
             lv = lvs.get(b["id"], {}).get("live")
-            out.append(dict(b, live=lv, status=live.bet_status(b, lv), eff_odds=eff_odds(b)))
+            out.append(dict(b, live=lv, status=live.bet_status(b, lv), eff_odds=eff_odds(b), win_profit=win_profit(b)))
     return out
 
 
