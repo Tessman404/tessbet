@@ -96,6 +96,50 @@ def get_cap_setting():
     return float(c) if isinstance(c, (int, float)) and c > 0 else None
 
 
+def _ts(s):
+    try:
+        return dt.datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def book_balances(bets):
+    """Solde de chaque site, sans compter deux fois l'argent rejoué.
+
+    On rejoue les mouvements dans l'ordre : une mise prend d'abord l'argent déjà sur le site (gains compris) ;
+    s'il en manque, c'est un dépôt. Un pari terminé rend son argent environ 3 h après son dernier coup d'envoi."""
+    events = []
+    for b in bets:
+        t0 = _ts(b.get("created")) or 0
+        events.append((t0, 0, b))
+        if b["result"] in ("win", "lose", "void"):
+            kicks = [_ts(x.get("kickoff")) for x in (b.get("legs") or [b])]
+            kicks = [k for k in kicks if k]
+            events.append((max(kicks + [t0]) + 3 * 3600, 1, b))
+    books = {}
+    for t, kind, b in sorted(events, key=lambda e: (e[0], e[1])):
+        k = b.get("book") or ""
+        x = books.setdefault(k, {"key": k, "name": BOOK_NAMES.get(k, "Non précisé"), "n": 0, "staked": 0.0, "profit": 0.0,
+                                 "won": 0, "deposit": 0.0, "cash": 0.0, "pending": 0.0})
+        if kind == 0:
+            x["n"] += 1
+            x["staked"] = round(x["staked"] + b["stake"], 2)
+            if x["cash"] < b["stake"]:
+                x["deposit"] = round(x["deposit"] + b["stake"] - x["cash"], 2)
+                x["cash"] = 0.0
+            else:
+                x["cash"] = round(x["cash"] - b["stake"], 2)
+            if b["result"] == "pending":
+                x["pending"] = round(x["pending"] + b["stake"], 2)
+        else:
+            x["cash"] = round(x["cash"] + returned(b), 2)
+            x["profit"] = round(x["profit"] + bet_profit(b), 2)
+            x["won"] += b["result"] == "win"
+    for x in books.values():
+        x["balance"] = x.pop("cash")  # argent disponible sur le site (hors mises en cours)
+    return books
+
+
 def compute_stats(d):
     cfg = engine.load_config()
     bets = sorted(d["bets"], key=lambda b: b.get("created", ""))
@@ -117,18 +161,12 @@ def compute_stats(d):
         series.append({"date": b["date"], "label": b["pick"], "profit": p, "bankroll": run})
         day = by_day.setdefault(b["date"], {"date": b["date"], "n": 0, "staked": 0.0, "profit": 0.0})
         day["n"] += 1; day["staked"] = round(day["staked"] + b["stake"], 2); day["profit"] = round(day["profit"] + p, 2)
-    # répartition par bookmaker : l'argent engagé là + le résultat obtenu là
-    books = {}
-    for b in bets:
-        k = b.get("book") or ""
-        x = books.setdefault(k, {"key": k, "name": BOOK_NAMES.get(k, "Non précisé"), "n": 0, "staked": 0.0, "profit": 0.0, "won": 0})
-        x["n"] += 1; x["staked"] = round(x["staked"] + b["stake"], 2)
-        x["profit"] = round(x["profit"] + bet_profit(b), 2)
-        x["won"] += b["result"] == "win"
-    for x in books.values():
-        x["balance"] = round(x["staked"] + x["profit"], 2)
+    # répartition par bookmaker : argent déposé (estimé), en jeu, gagné ou perdu, et solde sur le site
+    books = book_balances(bets)
     by_book = sorted(books.values(), key=lambda x: -x["balance"])
+    unplaced = round(d["bankroll_start"] - sum(x["deposit"] for x in by_book), 2)
     return {
+        "unplaced": unplaced,
         "bankroll_start": d["bankroll_start"], "bankroll": bankroll, "profit": profit, "pending": pending,
         "roi": round(profit / staked_played, 4) if staked_played else None,
         "win_rate": round(sum(1 for b in played if b["result"] == "win") / len(played), 4) if played else None,

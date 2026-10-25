@@ -360,6 +360,14 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .has-bar { padding-bottom: 84px; }
 .has-bar .toast { bottom: 84px; }
 @media (min-width: 900px) { .slipbar { display: none; } .has-bar { padding-bottom: 32px; } .has-bar .toast { bottom: 24px; } }
+.books { margin: 0; padding: 0; list-style: none; }
+.books li { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--turf-3); }
+.books li:last-child { border-bottom: 0; }
+.books .bn { font-weight: 700; color: #fff; }
+.books .bd { font-size: .85rem; color: var(--chalk-dim); }
+.books b { font: 700 1.3rem/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.bookspanel { margin-bottom: 18px; }
+.bookspanel .note { margin-top: 8px; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -868,12 +876,6 @@ function evolution(s) {
     add('text', { x: W - P, y: 14, fill: '#fff', 'font-size': 13, 'text-anchor': 'end', 'font-weight': 700 }, 'Aujourd\'hui ' + eur(s.bankroll));
     wrap.append(el('div', { class: 'panel' }, svg, el('p', { class: 'note', text: `Départ ${eur(s.bankroll_start)} → maintenant ${eur(s.bankroll)} (${signedEur(s.profit)}). Un point = un pari terminé.` })));
   } else wrap.append(el('p', { class: 'note', text: 'La courbe apparaît dès ton premier pari terminé.' }));
-  wrap.append(el('h2', { class: 'section', text: 'Par bookmaker' }));
-  wrap.append(el('div', { class: 'panel tablewrap' }, el('table', {},
-    el('thead', {}, el('tr', {}, ['Site', 'Paris', 'Misé', 'Résultat', 'Solde estimé'].map(t => el('th', { text: t })))),
-    el('tbody', {}, s.by_book.map(x => el('tr', {}, el('td', { text: x.name }), el('td', { text: String(x.n) }), el('td', { text: eur(x.staked) }),
-      el('td', { class: x.profit > 0 ? 'pos' : x.profit < 0 ? 'neg' : '', text: signedEur(x.profit) }), el('td', { text: eur(x.balance) }))))),
-    el('p', { class: 'note', text: 'Solde estimé = ce que tu as engagé sur le site + ce que tu y as gagné ou perdu. « Non précisé » : modifie le pari pour choisir son site.' })));
   if (s.by_day.length) {
     wrap.append(el('h2', { class: 'section', text: 'Jour par jour' }));
     wrap.append(el('div', { class: 'panel tablewrap' }, el('table', {},
@@ -893,6 +895,7 @@ function renderTrack() {
     el('div', { class: 'bank', text: eur(s.bankroll) }),
     el('p', { class: 'bank-sub' }, 'Argent disponible, dont ', eur(s.pending), ' en jeu. Résultat total : ',
       el('span', { class: s.profit > 0 ? 'pos' : s.profit < 0 ? 'neg' : '', text: signedEur(s.profit) })),
+    booksPanel(s),
     el('div', { class: 'grid3' },
       el('div', { class: 'cell' }, el('span', { text: 'Réussite' }), el('strong', { text: s.win_rate == null ? '–' : pct(s.win_rate) })),
       el('div', { class: 'cell' }, el('span', { text: 'Rendement' }), el('strong', { text: s.roi == null ? '–' : pct(s.roi, 1) })),
@@ -901,7 +904,6 @@ function renderTrack() {
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
       el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui. Tu peux changer la limite dans Réglages.` })),
-    evolution(s),
     el('div', { class: 'sechead' }, el('h2', { class: 'section', text: 'Historique' }),
       el('button', { class: 'btn small refresh', type: 'button', text: '+ Ajouter un pari', onclick: () => showTab('bet') })));
   if (!state.bets.length) {
@@ -910,9 +912,22 @@ function renderTrack() {
   } else {
     state.bets.forEach(b => box.append(betRow(b)));
   }
+  box.append(evolution(s));
 }
 
-/* ---------------- Passés ---------------- */
+/* Le solde de chaque site, juste sous le total : leur somme fait le total. */
+function booksPanel(s) {
+  const rows = s.by_book.filter(x => x.n);
+  if (!rows.length) return null;
+  const list = el('ul', { class: 'books' }, rows.map(x => el('li', {},
+    el('span', { class: 'bn', text: x.name }),
+    el('span', { class: 'bd', text: (x.pending ? `dont ${eur(x.pending)} en jeu en plus · ` : '') + 'résultat ' + signedEur(x.profit) }),
+    el('b', { text: eur(x.balance + x.pending) }))));
+  if (s.unplaced > 0.004) list.append(el('li', {}, el('span', { class: 'bn', text: 'Pas encore sur un site' }), el('span', { class: 'bd', text: '' }), el('b', { text: eur(s.unplaced) })));
+  return el('div', { class: 'panel bookspanel' }, list,
+    el('p', { class: 'note', text: 'Solde de chaque site = ce que tu y as déposé + ce que tu y as gagné ou perdu (mises en cours comprises). Un pari sans site est compté dans « Non précisé » : modifie-le pour choisir son site.' }));
+}
+
 function renderPast(days) {
   const box = document.getElementById('past'); box.replaceChildren();
   if (!days.length) {
