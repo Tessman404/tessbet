@@ -62,7 +62,7 @@ def fetch_events(slug, day):
     d0, d1 = day - dt.timedelta(days=1), day + dt.timedelta(days=1)
     if slug.startswith("tennis/"):
         return tennis_events(slug, day)
-    ranges = [f"{d0:%Y%m%d}-{d1:%Y%m%d}"] if slug.startswith("soccer/") else [f"{d:%Y%m%d}" for d in (d0, day, d1)]
+    ranges = [f"{d:%Y%m%d}" for d in (day, d0, d1)]  # ESPN refuse désormais les périodes : un jour à la fois
     events, seen = [], set()
     for rng in ranges:
         data, _ = engine.http_json(f"{ESPN}/{slug}/scoreboard?dates={rng}", {"User-Agent": "Mozilla/5.0 (Tessbet)"}, 15)
@@ -93,7 +93,35 @@ def tennis_events(slug, day):
     return out
 
 
-def find_event(events, home, away):
+# Noms qui diffèrent entre les sites de cotes et ESPN
+ALIASES = {
+    "inter milan": "internazionale", "inter": "internazionale", "ac milan": "milan", "psg": "paris saint-germain",
+    "paris saint germain": "paris saint-germain", "athletic bilbao": "athletic club", "atletico madrid": "atlético madrid",
+    "bayern munich": "bayern munchen", "bayer leverkusen": "bayer 04 leverkusen", "borussia monchengladbach": "monchengladbach",
+    "wolverhampton wanderers": "wolves", "tottenham hotspur": "tottenham", "manchester united": "man united",
+    "brighton and hove albion": "brighton", "nottingham forest": "nottm forest", "sevilla": "sevilla fc",
+    "la clippers": "la clippers", "los angeles clippers": "la clippers", "los angeles lakers": "los angeles lakers",
+}
+
+
+def _same(a, b):
+    a2, b2 = engine.unaccent(a or "").lower().strip(), engine.unaccent(b or "").lower().strip()
+    a2, b2 = ALIASES.get(a2, a2), ALIASES.get(b2, b2)
+    return engine.team_match(a2, b2) or engine.team_match(a or "", b or "")
+
+
+def _names(x):
+    t = x.get("team") or {}
+    return [t.get("displayName", ""), t.get("name", ""), t.get("shortDisplayName", ""), t.get("location", "")]
+
+
+def find_event(events, home, away, kickoff=None):
+    """Retrouve le match chez ESPN. Les deux noms d'abord ; sinon un seul nom + l'heure du coup d'envoi (noms différents d'un site à l'autre)."""
+    try:
+        k = dt.datetime.fromisoformat(kickoff.replace("Z", "+00:00")).timestamp() if kickoff else None
+    except ValueError:
+        k = None
+    partial = []
     for ev in events:
         comp = (ev.get("competitions") or [{}])[0]
         teams = comp.get("competitors") or []
@@ -101,9 +129,21 @@ def find_event(events, home, away):
             continue
         for i, t in enumerate(teams):
             other = teams[1 - i]
-            names = lambda x: [x["team"].get("displayName", ""), x["team"].get("name", "")]
-            if any(engine.team_match(home, n) for n in names(t)) and any(engine.team_match(away, n) for n in names(other)):
+            h_ok = any(_same(home, n) for n in _names(t) if n)
+            a_ok = any(_same(away, n) for n in _names(other) if n)
+            if h_ok and a_ok:
                 return ev, comp, i
+            if h_ok or a_ok:
+                partial.append((ev, comp, i))
+    if k:
+        def start(c):
+            try:
+                return dt.datetime.fromisoformat((c.get("date") or "").replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return None
+        partial = [p for p in partial if start(p[1]) is not None and abs(start(p[1]) - k) <= 90 * 60]
+    if len({id(p[1]) for p in partial}) == 1:
+        return partial[0]
     return None, None, None
 
 
@@ -197,7 +237,7 @@ def tracked(bets):
         for i, leg in enumerate(b["legs"]):
             if leg.get("result", "pending") != "pending":
                 continue
-            out.append({"id": f"{b['id']}:{i}", "date": (leg.get("kickoff") or b.get("date") or "")[:10], "match": leg["match"],
+            out.append({"id": f"{b['id']}:{i}", "date": (leg.get("kickoff") or b.get("date") or "")[:10], "match": leg["match"], "kickoff": leg.get("kickoff"),
                         "pick": leg["pick"], "pick_team": leg.get("pick_team"), "sport": leg.get("sport") or "football",
                         "league_key": leg.get("league_key"), "result": "pending", "shown": f"{leg['pick']} (combiné)"})
     return out
@@ -315,14 +355,19 @@ def tick(now=None):
             except Exception as e:
                 print("suivi direct :", slug, str(e)[:80], file=sys.stderr)
                 continue
-            ev, comp, idx = find_event(cache[(slug, bday)], home, away)
+            ev, comp, idx = find_event(cache[(slug, bday)], home, away, bet.get("kickoff"))
             if ev:
                 found = (slug, ev, comp, idx)
                 break
         first = "score" not in st
         if not found:
             st["miss"] = st.get("miss", 0) + 1
-            st["next"] = now + (600 if st["miss"] < 40 else 3600)
+            try:
+                k = dt.datetime.fromisoformat(bet["kickoff"].replace("Z", "+00:00")).timestamp()
+            except Exception:
+                k = None
+            near = k is not None and k - 900 <= now <= k + 3 * 3600  # autour du match : on réessaie souvent
+            st["next"] = now + (90 if near else 600 if st["miss"] < 40 else 3600)
             state[bet["id"]] = st
             changed = True
             continue
@@ -407,7 +452,7 @@ def tg_results(now=None):
                     cache[(slug, day)] = fetch_events(slug, day)
             except Exception:
                 continue
-            ev, comp, idx = find_event(cache[(slug, day)], home, away)
+            ev, comp, idx = find_event(cache[(slug, day)], home, away, x.get("kickoff"))
             if ev:
                 found = read_state(comp, idx)
                 break
