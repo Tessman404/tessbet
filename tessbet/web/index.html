@@ -861,7 +861,7 @@ function renderRecap() {
   const base = s.invested || s.bankroll_start;
   const roi = base ? s.profit / base : 0;
   box.append(
-    tile('Mon argent', eur(s.bankroll), (s.by_book || []).filter(x => x.n).map(x => `${x.name} ${eur(x.balance + x.pending)}`).join(' · ') || 'Aucun site', 'track'),
+    tile('Mon argent', eur(s.bankroll - s.pending), (s.by_book || []).filter(x => x.n || x.balance).map(x => `${x.name} ${eur(x.balance)}`).join(' · ') || 'Aucun site', 'track'),
     tile('Plus-value depuis le début', signedEur(s.profit), `${roi >= 0 ? '+' : '−'}${pct(Math.abs(roi), 1)} sur ${eur(base)} apportés`, 'track', s.profit > 0 ? 'up' : s.profit < 0 ? 'down' : ''),
     tile('En jeu', eur(s.pending), pend.length ? `${plural(pend.length, 'pari', 'paris')} · gain potentiel +${eur(pot)}` : 'Aucun pari en cours', 'track'),
     tile('En direct', live ? plural(live, 'match', 'matchs') : '–', live ? 'en cours maintenant' : items.length ? plural(items.length, 'match à venir', 'matchs à venir') : 'Rien à suivre', 'live', live ? 'live' : ''));
@@ -1006,8 +1006,8 @@ function renderTrack() {
   const over = s.staked_today > s.daily_cap;
   const used = s.daily_cap ? Math.min(100, (s.staked_today / s.daily_cap) * 100) : 0;
   box.append(
-    el('div', { class: 'bank', text: eur(s.bankroll) }),
-    el('p', { class: 'bank-sub' }, 'Argent disponible, dont ', eur(s.pending), ' en jeu. Résultat total : ',
+    el('div', { class: 'bank', text: eur(s.bankroll - s.pending) }),
+    el('p', { class: 'bank-sub' }, 'Argent disponible (mises en cours déjà retirées). En jeu : ', eur(s.pending), ` · total avec les mises en cours : ${eur(s.bankroll)}. Résultat total : `,
       el('span', { class: s.profit > 0 ? 'pos' : s.profit < 0 ? 'neg' : '', text: signedEur(s.profit) })),
     booksPanel(s),
     el('div', { class: 'grid3' },
@@ -1054,11 +1054,11 @@ function booksPanel(s) {
   const rows = s.by_book.filter(x => x.n || x.balance || x.pending || x.added || x.withdrawn);
   const list = el('ul', { class: 'books' }, rows.map(x => el('li', {},
     el('span', { class: 'bn', text: x.name }),
-    el('span', { class: 'bd', text: (x.pending ? `dont ${eur(x.pending)} en jeu en plus · ` : '') + 'résultat ' + signedEur(x.profit) }),
-    el('b', { text: eur(x.balance + x.pending) }))));
+    el('span', { class: 'bd', text: (x.pending ? `+ ${eur(x.pending)} en jeu · ` : '') + 'résultat ' + signedEur(x.profit) }),
+    el('b', { text: eur(x.balance) }))));
   if (s.unplaced > 0.004) list.append(el('li', {}, el('span', { class: 'bn', text: 'Pas encore sur un site' }), el('span', { class: 'bd', text: '' }), el('b', { text: eur(s.unplaced) })));
   return el('div', { class: 'panel bookspanel' }, list, moveForm(s), movesList(s),
-    el('p', { class: 'note', text: 'Solde de chaque site = ce que tu y as déposé + ce que tu y as gagné ou perdu (mises en cours comprises). Un pari sans site est compté dans « Non précisé » : modifie-le pour choisir son site.' }));
+    el('p', { class: 'note', text: 'Solde de chaque site = ce que tu y as déposé + ce que tu y as gagné ou perdu, moins les mises en cours (affichées à part). Un pari sans site est compté dans « Non précisé » : modifie-le pour choisir son site.' }));
 }
 
 /* Retrait vers la banque, dépôt depuis la banque, ou transfert d'un site à l'autre. */
