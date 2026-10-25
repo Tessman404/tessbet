@@ -1068,16 +1068,22 @@ function moveForm(s) {
   const typ = el('select', { 'aria-label': 'Type de mouvement' },
     el('option', { value: 'transfer', text: 'Transfert d\'un site à un autre' }),
     el('option', { value: 'withdraw', text: 'Retrait vers mon compte bancaire' }),
-    el('option', { value: 'deposit', text: 'Dépôt depuis mon compte bancaire' }));
+    el('option', { value: 'deposit', text: 'Dépôt depuis mon compte bancaire' }),
+    el('option', { value: 'adjust', text: 'Corriger le solde d\'un site' }));
   const from = el('select', { 'aria-label': 'Site de départ' }, opts()), to = el('select', { 'aria-label': 'Site d\'arrivée' }, opts());
   const amount = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'Montant €', 'aria-label': 'Montant en euros', autocomplete: 'off' });
   const lf = el('label', {}, 'De ', from), lt = el('label', {}, 'Vers ', to);
-  const sync = () => { lf.hidden = typ.value === 'deposit'; lt.hidden = typ.value === 'withdraw'; };
+  const ltText = lt.firstChild;
+  const sync = () => {
+    lf.hidden = typ.value === 'deposit' || typ.value === 'adjust'; lt.hidden = typ.value === 'withdraw';
+    ltText.textContent = typ.value === 'adjust' ? 'Site ' : 'Vers ';
+    amount.placeholder = typ.value === 'adjust' ? 'Solde réel €' : 'Montant €';
+  };
   typ.addEventListener('change', sync); sync();
   const send = async force => {
     try {
       await api('moves', 'POST', { type: typ.value, from: from.value, to: to.value, amount: num(amount.value), force });
-      toast({ transfer: 'Transfert enregistré.', withdraw: 'Retrait enregistré.', deposit: 'Dépôt enregistré.' }[typ.value]);
+      toast({ transfer: 'Transfert enregistré.', withdraw: 'Retrait enregistré.', deposit: 'Dépôt enregistré.', adjust: 'Solde corrigé.' }[typ.value]);
       await loadStats(); renderTrack();
     } catch (e) {
       if (e.status === 409 && confirm(e.message + '\n\nEnregistrer quand même ?')) return send(true);
@@ -1085,19 +1091,20 @@ function moveForm(s) {
     }
   };
   const form = el('div', { class: 'moveform' }, typ, lf, lt, amount, el('button', { class: 'btn small', type: 'button', text: 'Valider', onclick: () => send(false) }));
-  return el('details', { class: 'moves' }, el('summary', { text: 'Retrait, dépôt ou transfert entre sites' }), form,
-    el('p', { class: 'note', text: 'Un transfert ne change pas ton argent total. Un retrait vers ta banque le diminue, un dépôt l\'augmente. Ta plus-value ne bouge pas.' }));
+  return el('details', { class: 'moves' }, el('summary', { text: 'Retrait, dépôt, transfert ou correction du solde' }), form,
+    el('p', { class: 'note', text: 'Un transfert ne change pas ton argent total. Un retrait vers ta banque le diminue, un dépôt l\'augmente. Pour corriger, tape le solde affiché sur le site (sans les paris en cours) : Tessbet calcule l\'écart. Ta plus-value ne bouge pas.' }));
 }
 
 function movesList(s) {
   const ms = s.moves || [];
   if (!ms.length) return null;
-  const txt = m => m.type === 'transfer' ? `${m.from_name} → ${m.to_name}` : m.type === 'withdraw' ? `Retrait ${m.from_name} → banque` : `Dépôt banque → ${m.to_name}`;
+  const txt = m => m.type === 'transfer' ? `${m.from_name} → ${m.to_name}` : m.type === 'withdraw' ? `Retrait ${m.from_name} → banque`
+    : m.type === 'adjust' ? `Correction ${m.to_name} (solde mis à ${eur(m.target)})` : `Dépôt banque → ${m.to_name}`;
   return el('details', { class: 'moves' }, el('summary', { text: `Mouvements d'argent (${ms.length})` }),
     el('ul', { class: 'books' }, ms.map(m => el('li', {},
       el('span', { class: 'bn', text: new Date(m.created).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) }),
       el('span', { class: 'bd', text: txt(m) }),
-      el('span', {}, el('b', { text: eur(m.amount) }), ' ',
+      el('span', {}, el('b', { text: m.type === 'adjust' ? signedEur(m.amount) : eur(m.amount) }), ' ',
         el('button', { class: 'mini', type: 'button', title: 'Supprimer', 'aria-label': 'Supprimer ce mouvement', text: '×', onclick: async () => {
           if (!confirm('Supprimer ce mouvement ?')) return;
           try { await api('moves/' + m.id, 'DELETE'); await loadStats(); renderTrack(); } catch (e) { toast(e.message, true); }

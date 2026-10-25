@@ -159,8 +159,13 @@ def book_balances(bets, moves=()):
             x["cash"] = round(x["cash"] - amount, 2)
 
     for t, kind, b in sorted(events, key=lambda e: (e[0], e[1])):
-        if kind == 2:  # mouvement d'argent : dépôt, retrait ou transfert entre deux sites
+        if kind == 2:  # mouvement d'argent : dépôt, retrait, transfert entre deux sites, ou correction du solde
             amt = b["amount"]
+            if b["type"] == "adjust":
+                x = book(b["to"])
+                x["cash"] = round(x["cash"] + amt, 2)
+                x["adjusted"] = round(x.get("adjusted", 0.0) + amt, 2)
+                continue
             if b["type"] in ("withdraw", "transfer"):
                 x = book(b["from"])
                 take(x, amt)
@@ -209,7 +214,8 @@ def compute_stats(d):
     moves = sorted(d.get("moves", []), key=lambda m: m.get("created", ""))
     added = round(sum(m["amount"] for m in moves if m["type"] == "deposit"), 2)      # argent ajouté depuis la banque
     withdrawn = round(sum(m["amount"] for m in moves if m["type"] == "withdraw"), 2)  # argent retiré vers la banque
-    bankroll = round(d["bankroll_start"] + added - withdrawn + profit, 2)
+    adjusted = round(sum(m["amount"] for m in moves if m["type"] == "adjust"), 2)    # corrections faites à la main
+    bankroll = round(d["bankroll_start"] + added - withdrawn + adjusted + profit, 2)
     today = today_paris()
     staked_today = round(sum(b["stake"] for b in bets if b["date"] == today), 2)
     manual = get_cap_setting()
@@ -219,9 +225,9 @@ def compute_stats(d):
     timeline = [(b.get("created", ""), "bet", b) for b in settled] + [(m.get("created", ""), "move", m) for m in moves if m["type"] != "transfer"]
     for _, kind, b in sorted(timeline, key=lambda x: x[0]):
         if kind == "move":
-            delta = b["amount"] if b["type"] == "deposit" else -b["amount"]
+            delta = b["amount"] if b["type"] in ("deposit", "adjust") else -b["amount"]
             run = round(run + delta, 2)
-            series.append({"date": b["created"][:10], "label": ("Dépôt " if delta > 0 else "Retrait ") + BOOK_NAMES.get(b.get("to") or b.get("from"), ""),
+            series.append({"date": b["created"][:10], "label": ("Correction " if b["type"] == "adjust" else "Dépôt " if delta > 0 else "Retrait ") + BOOK_NAMES.get(b.get("to") or b.get("from"), ""),
                            "profit": 0.0, "move": delta, "bankroll": run})
             continue
         p = bet_profit(b)
@@ -414,6 +420,8 @@ def delete_bet(bet_id):
 def add_move(body):
     """Retrait vers la banque, dépôt depuis la banque, ou transfert d'un site à un autre."""
     typ = body.get("type")
+    if typ == "adjust":
+        return adjust_book(body)
     if typ not in ("deposit", "withdraw", "transfer"):
         return 400, {"error": "Choisis : retrait, dépôt ou transfert."}
     try:
@@ -441,6 +449,30 @@ def add_move(body):
             m["from"] = src
         if typ != "withdraw":
             m["to"] = dst
+        d.setdefault("moves", []).append(m)
+        engine.write_json(BETS_PATH, d)
+        return 200, {"move": m}
+
+
+def adjust_book(body):
+    """Corrige le solde d'un site : tu donnes le montant réel affiché sur le site (hors paris en cours), Tessbet ajuste."""
+    dst = str(body.get("to") or "").lower()
+    if dst not in BOOK_NAMES:
+        return 400, {"error": "Choisis le site à corriger."}
+    try:
+        real = round(float(str(body.get("amount")).replace(",", ".")), 2)
+    except (TypeError, ValueError):
+        return 400, {"error": "Montant invalide."}
+    if real < 0:
+        return 400, {"error": "Le solde ne peut pas être négatif."}
+    with LOCK:
+        d = load_bets()
+        have = book_balances(d["bets"], d.get("moves", [])).get(dst, {}).get("balance", 0.0)
+        diff = round(real - have, 2)
+        if abs(diff) < 0.005:
+            return 400, {"error": f"Le solde de {BOOK_NAMES[dst]} est déjà exact."}
+        m = {"id": uuid.uuid4().hex[:8], "created": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"), "type": "adjust", "to": dst,
+             "amount": diff, "target": real}
         d.setdefault("moves", []).append(m)
         engine.write_json(BETS_PATH, d)
         return 200, {"move": m}
