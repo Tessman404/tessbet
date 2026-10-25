@@ -727,6 +727,18 @@ def tg_share(body):
         tg_call("sendMessage", {"chat_id": st["chat"]["id"], "text": text[:4000], "parse_mode": "HTML", "disable_web_page_preview": True})
     except Exception as e:
         return 400, {"error": str(e)}
+    if not body.get("test"):  # on retient les pronos envoyés : le bot donnera le résultat de chacun à la fin du match
+        t = read_json(TG_PATH, {})
+        shared = {x["id"]: x for x in t.get("shared", [])}
+        for d in days:
+            for s in d.get("selections", []):
+                if s["id"] not in shared:
+                    shared[s["id"]] = {"id": s["id"], "date": d["date"], "match": s["match"], "pick": s["pick_label"],
+                                       "pick_team": s.get("pick_team"), "sport": s["sport"], "league_key": s.get("league_key", ""),
+                                       "kickoff": s.get("kickoff"), "odds": s["odds"], "tier": s.get("tier", "fiable"), "reported": None}
+        cutoff = (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=7)).isoformat()
+        t["shared"] = [x for x in shared.values() if x["date"] >= cutoff]
+        engine.write_json(TG_PATH, t)
     return 200, {"ok": True, "chat": st["chat"]["title"]}
 
 

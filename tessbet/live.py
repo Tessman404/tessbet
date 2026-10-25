@@ -361,6 +361,93 @@ def tick(now=None):
     return state
 
 
+# ---------------------------------------------------------------- résultats des pronos partagés sur Telegram
+def tg_send(text):
+    import urllib.request
+    token = engine.load_env().get("TELEGRAM_TOKEN", "")
+    chat = (_read("telegram.json", {}).get("chat") or {}).get("id")
+    if not token or not chat:
+        return False
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", method="POST",
+                                 data=json.dumps({"chat_id": chat, "text": text, "parse_mode": "HTML"}).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.status == 200
+
+
+_tg_next = {}
+
+
+def tg_results(now=None):
+    """À la fin de chaque match proposé et partagé, le bot annonce s'il est gagné ou perdu, puis le bilan du jour."""
+    now = now or time.time()
+    t = _read("telegram.json", {})
+    shared = t.get("shared") or []
+    if not shared:
+        return 0
+    sent, cache = 0, {}
+    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
+    for x in shared:
+        if x.get("reported") or now < _tg_next.get(x["id"], 0):
+            continue
+        try:
+            kick = dt.datetime.fromisoformat(x["kickoff"].replace("Z", "+00:00")).timestamp()
+        except Exception:
+            kick = 0
+        if kick and now < kick + 80 * 60:  # pas avant la fin probable du match
+            _tg_next[x["id"]] = kick + 80 * 60
+            continue
+        home, away = split_match(x["match"])
+        slugs = [LEAGUE_SLUGS[x["league_key"]]] if x.get("league_key") in LEAGUE_SLUGS else SPORT_SLUGS.get(x["sport"], [])
+        day = dt.date.fromisoformat((x.get("kickoff") or x["date"])[:10])
+        found = None
+        for slug in slugs:
+            try:
+                if (slug, day) not in cache:
+                    cache[(slug, day)] = fetch_events(slug, day)
+            except Exception:
+                continue
+            ev, comp, idx = find_event(cache[(slug, day)], home, away)
+            if ev:
+                found = read_state(comp, idx)
+                break
+        if not found or found["state"] != "post":
+            _tg_next[x["id"]] = now + 600
+            continue
+        res = final_result(pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away), found["score"])
+        if res is None:
+            x["reported"] = "unknown"
+            continue
+        sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "")
+        head = "✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>"
+        try:
+            tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} @ {engine.fr(x['odds'], 2)}"
+                    + (" (bonne affaire)" if x.get("tier") == "value" else ""))
+        except Exception as e:
+            print("telegram :", str(e)[:100], file=sys.stderr)
+            _tg_next[x["id"]] = now + 600
+            continue
+        x["reported"] = res
+        sent += 1
+        day_picks = [y for y in shared if y["date"] == x["date"]]
+        if all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
+            won = sum(y["reported"] == "win" for y in day_picks)
+            known = sum(y["reported"] in ("win", "lose") for y in day_picks)
+            try:
+                tg_send(f"📊 <b>Bilan Tessbet du {x['date'][8:10]}/{x['date'][5:7]}</b> : {won} gagné{'s' if won > 1 else ''} sur {known}.")
+                t.setdefault("bilans", []).append(x["date"])
+                t["bilans"] = t["bilans"][-14:]
+            except Exception:
+                pass
+    if sent or any(x.get("reported") == "unknown" for x in shared):
+        engine.write_json(_path("telegram.json"), t)
+    return sent
+
+
+def _esc(s):
+    return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def board(bets, state, now=None):
     """Les matchs de mes paris en cours, pour la tuile « En direct » de l'aperçu Home Assistant."""
     rows = []
@@ -423,4 +510,8 @@ def run_loop():
             publish()
         except Exception as e:
             print("tuile en direct :", str(e)[:100], file=sys.stderr)
+        try:
+            tg_results()
+        except Exception as e:
+            print("résultats Telegram :", str(e)[:100], file=sys.stderr)
         time.sleep(wait)
