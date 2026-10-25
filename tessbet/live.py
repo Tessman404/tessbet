@@ -419,7 +419,7 @@ def tg_results(now=None):
             x["reported"] = "unknown"
             continue
         sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "")
-        head = "✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>"
+        head = ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
         try:
             tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} @ {engine.fr(x['odds'], 2)}"
                     + (" (bonne affaire)" if x.get("tier") == "value" else ""))
@@ -428,13 +428,25 @@ def tg_results(now=None):
             _tg_next[x["id"]] = now + 600
             continue
         x["reported"] = res
+        x["score"] = sc
         sent += 1
         day_picks = [y for y in shared if y["date"] == x["date"]]
         if all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
-            won = sum(y["reported"] == "win" for y in day_picks)
-            known = sum(y["reported"] in ("win", "lose") for y in day_picks)
+            def count(group):
+                return sum(y["reported"] == "win" for y in group), sum(y["reported"] in ("win", "lose") for y in group)
+            pronos = [y for y in day_picks if y.get("tier") != "moins_sur"]
+            others = [y for y in day_picks if y.get("tier") == "moins_sur"]
+            lines = [f"📊 <b>Bilan Tessbet du {x['date'][8:10]}/{x['date'][5:7]}</b>"]
+            for label, group in (("Pronos", pronos), ("Moins sûrs", others)):
+                if not group:
+                    continue
+                w, k = count(group)
+                lines.append(f"\n<b>{label} : {w}/{k}</b>")
+                for y in group:
+                    mark = {"win": "✅", "lose": "❌"}.get(y["reported"], "❔")
+                    lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} @ {engine.fr(y['odds'], 2)}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))
             try:
-                tg_send(f"📊 <b>Bilan Tessbet du {x['date'][8:10]}/{x['date'][5:7]}</b> : {won} gagné{'s' if won > 1 else ''} sur {known}.")
+                tg_send("\n".join(lines))
                 t.setdefault("bilans", []).append(x["date"])
                 t["bilans"] = t["bilans"][-14:]
             except Exception:

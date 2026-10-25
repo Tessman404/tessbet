@@ -5,6 +5,7 @@ Lancer :  python3 server.py      puis ouvrir  http://<adresse>:8099
 Python standard uniquement.
 """
 import datetime as dt
+import hashlib
 import json
 import math
 import os
@@ -736,6 +737,12 @@ def tg_share(body):
                     shared[s["id"]] = {"id": s["id"], "date": d["date"], "match": s["match"], "pick": s["pick_label"],
                                        "pick_team": s.get("pick_team"), "sport": s["sport"], "league_key": s.get("league_key", ""),
                                        "kickoff": s.get("kickoff"), "odds": s["odds"], "tier": s.get("tier", "fiable"), "reported": None}
+            for n in d.get("near") or []:  # les « moins sûrs » sont suivis aussi, à part
+                nid = n.get("id") or "n" + hashlib.md5((d["date"] + n["match"] + n["pick_label"]).encode()).hexdigest()[:9]
+                if nid not in shared:
+                    shared[nid] = {"id": nid, "date": d["date"], "match": n["match"], "pick": n["pick_label"],
+                                   "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
+                                   "kickoff": n.get("kickoff"), "odds": n["odds"], "tier": "moins_sur", "reported": None}
         cutoff = (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=7)).isoformat()
         t["shared"] = [x for x in shared.values() if x["date"] >= cutoff]
         engine.write_json(TG_PATH, t)

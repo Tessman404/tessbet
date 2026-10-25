@@ -324,6 +324,8 @@ def near_misses(cands, cfg, limit=3):
             continue
         seen.add(c["event_id"])
         rows.append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "league": c["league"], "pick_label": pick_label(c),
+                     "id": hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:10], "pick_team": c["pick"],
+                     "league_key": c.get("league_key", ""), "kickoff": c["commence"],
                      "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
                      "prob": round(c["prob"], 3), "odds": round(c["odds"], 2), "reasons": why})
         if len(rows) >= limit:
