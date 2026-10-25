@@ -719,6 +719,16 @@ def _h(t):
     return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _tg_match(match, label, team=None):
+    """« A – B » avec l'équipe donnée gagnante en gras précédée d'un 🟢 (Telegram n'affiche pas les couleurs)."""
+    import re as _re
+    team = team or (None if label.startswith("Match nul") else _re.sub(r"^Victoire de ", "", label))
+    parts = _re.split(r"\s+[–-]\s+", match, maxsplit=1)
+    if len(parts) != 2 or not team:
+        return _h(match)
+    return " – ".join(f"🟢 <b>{_h(p)}</b>" if engine.team_match(p, team) else _h(p) for p in parts)
+
+
 def share_text(days, update=False):
     """Le message des pronos, prêt pour Telegram (paris retenus, bonne affaire, et les moins sûrs à titre indicatif)."""
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
@@ -736,14 +746,14 @@ def share_text(days, update=False):
             cl = s.get("claude") or {}
             head = ("💡 <b>Bonne affaire (plus risquée)</b>\n" if s.get("tier") == "value"
                     else "🎲 <b>Outsider (coup de poker, petite mise)</b>\n" if s.get("tier") == "outsider" else "")
-            out.append(f"\n{head}{ball.get(s['sport'], '')} {_h(s['kickoff_local'])} · {_h(s['league'])}\n<b>{_h(s['match'])}</b>\n"
+            out.append(f"\n{head}{ball.get(s['sport'], '')} {_h(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
                        f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
                        + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
         near = d.get("near") or []
         if near:
             out.append("\n🤔 <i>Moins sûrs (pas retenus, à vos risques) :</i>")
             for n in near:
-                out.append(f"• {ball.get(n.get('sport'), '')} {_h(n['match'])} – {_h(n['pick_label'])} @ {engine.fr(n['odds'], 2)} ({round(n['prob'] * 100)} %)")
+                out.append(f"• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} ({round(n['prob'] * 100)} %)")
         out.append("")
     out.append("<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre. Joueurs Info Service 09 74 75 13 13.</i>")
     return "\n".join(out).strip()
