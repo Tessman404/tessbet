@@ -55,12 +55,19 @@ def pick_team(bet):
 
 
 def fetch_events(slug, day):
-    """Matchs de la veille, du jour et du lendemain (ESPN compte les jours à l'heure américaine)."""
-    d0 = day - dt.timedelta(days=1)
-    d1 = day + dt.timedelta(days=1)
-    rng = f"{d0:%Y%m%d}-{d1:%Y%m%d}"
-    data, _ = engine.http_json(f"{ESPN}/{slug}/scoreboard?dates={rng}", {"User-Agent": "Mozilla/5.0 (Tessbet)"}, 15)
-    return data.get("events", [])
+    """Matchs de la veille, du jour et du lendemain (ESPN compte les jours à l'heure américaine).
+
+    Le foot accepte une période en une seule demande ; le basket la refuse (erreur 400) : un jour à la fois."""
+    d0, d1 = day - dt.timedelta(days=1), day + dt.timedelta(days=1)
+    ranges = [f"{d0:%Y%m%d}-{d1:%Y%m%d}"] if slug.startswith("soccer/") else [f"{d:%Y%m%d}" for d in (d0, day, d1)]
+    events, seen = [], set()
+    for rng in ranges:
+        data, _ = engine.http_json(f"{ESPN}/{slug}/scoreboard?dates={rng}", {"User-Agent": "Mozilla/5.0 (Tessbet)"}, 15)
+        for ev in data.get("events", []):
+            if ev.get("id") not in seen:
+                seen.add(ev.get("id"))
+                events.append(ev)
+    return events
 
 
 def find_event(events, home, away):
