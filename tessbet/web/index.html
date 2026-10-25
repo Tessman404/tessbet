@@ -372,6 +372,17 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .boostrow .note2 { margin: 0; }
 .gainp { margin-top: 4px; font-size: .9rem; color: var(--chalk); }
 .gainp b { color: var(--green); font-size: 1rem; }
+.vbanner { margin: -2px 0 10px; padding: 8px 10px; border: 1.5px dashed #c98a00; border-radius: 10px; background: #fff3cf; font-size: .86rem; color: var(--ink); }
+.ticket.value { box-shadow: 0 0 0 2px #c98a00, 0 10px 24px rgba(0,0,0,.28); }
+.recap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 6px 0 16px; }
+@media (max-width: 760px) { .recap { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rtile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 12px 14px; text-align: left; border: 1px solid var(--turf-3); border-radius: 14px; background: var(--turf-2); color: var(--chalk); }
+.rtile:hover { border-color: var(--chalk-dim); }
+.rtile .rl { font-size: .8rem; color: var(--chalk-dim); }
+.rtile strong { font: 700 1.6rem/1.15 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.rtile small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; color: var(--chalk-dim); }
+.rtile.up strong { color: var(--green); } .rtile.down strong { color: #ff7478; }
+.rtile.live { border-color: #ff5a5f; } .rtile.live strong { color: #ff9a9c; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -423,6 +434,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
   <section id="tab-today">
     <div class="pagehead"><h1>Aujourd'hui</h1><p class="date" id="date"></p></div>
     <div id="demo-banner" class="banner" hidden>Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d'après cet écran.</div>
+    <div class="recap" id="recap" aria-label="Résumé"></div>
     <div class="cmd" id="cmd" aria-label="Analyse du jour"></div>
     <p class="summary" id="summary"></p>
     <div id="tickets"></div>
@@ -576,8 +588,10 @@ function ticket(s) {
   }
   const analyse = cl && cl.analyse ? el('details', {}, el('summary', { text: 'Lire l\'analyse complète de Claude' }),
     el('div', { class: 'analyse' }, cl.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() })))) : null;
-  return el('article', { class: 'ticket' },
+  const value = s.tier === 'value';
+  return el('article', { class: 'ticket' + (value ? ' value' : '') },
     el('div', { class: 'body' },
+      value ? el('div', { class: 'vbanner' }, el('b', { text: '💡 Bonne affaire' }), ` – plus risqué : ${pct(s.prob)} de chances. La cote vaut plus que le risque, mais tu perdras plus souvent : petite mise.`) : null,
       el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: s.kickoff_local })),
       el('h2', { class: 'pick', text: s.pick_label }),
       el('p', { class: 'match', text: s.match }),
@@ -586,7 +600,7 @@ function ticket(s) {
         el('div', { class: 'track' }, el('i', { style: `width:${Math.round(s.prob * 100)}%` }), marks)),
       el('div', { class: 'chips' },
         el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
-        s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
+        value ? el('span', { class: 'chip deal', text: 'Pari risqué' }) : s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
       offerChips,
       claudeBox,
       analyse,
@@ -788,9 +802,30 @@ function daySection(i, multi) {
   return sec;
 }
 
+/* Le résumé en haut d'Aujourd'hui : mon argent, ma plus-value, ce qui est en jeu, ce qui se joue maintenant. */
+function renderRecap() {
+  const box = document.getElementById('recap'), s = state.stats;
+  if (!box) return;
+  box.replaceChildren();
+  if (!s) return;
+  const pend = state.bets.filter(b => b.result === 'pending');
+  const pot = pend.reduce((t, b) => t + gainOf(b), 0);
+  const items = pend.flatMap(b => b.legs && b.legs.length ? b.legs : [b]);
+  const live = items.filter(x => x.live && x.live.state === 'in').length;
+  const tile = (label, value, sub, tab, cls = '') => el('button', { class: 'rtile ' + cls, type: 'button', onclick: () => showTab(tab) },
+    el('span', { class: 'rl', text: label }), el('strong', { text: value }), el('small', { text: sub }));
+  const roi = s.bankroll_start ? s.profit / s.bankroll_start : 0;
+  box.append(
+    tile('Mon argent', eur(s.bankroll), (s.by_book || []).filter(x => x.n).map(x => `${x.name} ${eur(x.balance + x.pending)}`).join(' · ') || 'Aucun site', 'track'),
+    tile('Plus-value depuis le début', signedEur(s.profit), `${roi >= 0 ? '+' : '−'}${pct(Math.abs(roi), 1)} sur ${eur(s.bankroll_start)} de départ`, 'track', s.profit > 0 ? 'up' : s.profit < 0 ? 'down' : ''),
+    tile('En jeu', eur(s.pending), pend.length ? `${plural(pend.length, 'pari', 'paris')} · gain potentiel +${eur(pot)}` : 'Aucun pari en cours', 'track'),
+    tile('En direct', live ? plural(live, 'match', 'matchs') : '–', live ? 'en cours maintenant' : items.length ? plural(items.length, 'match à venir', 'matchs à venir') : 'Rien à suivre', 'live', live ? 'live' : ''));
+}
+
 function renderToday() {
   const d = state.today;
   if (!d) return;
+  renderRecap();
   const o = overview();
   document.getElementById('date').textContent = fmtDay(parisToday());
   document.getElementById('demo-banner').hidden = d.mode !== 'demo';
@@ -1376,7 +1411,7 @@ async function showTab(t) {
     if (t === 'past') renderPast((await api('history')).days);
     if (t === 'track') { await Promise.all([loadStats(), loadBets()]); renderTrack(); }
     if (t === 'settings') { await Promise.all([loadStats(), loadToday(), loadSettings()]); renderSettings(state.settings); }
-    if (t === 'today') { await Promise.all([loadToday(), loadBets(), loadSettings()]); renderToday(); watchWaiting(); }
+    if (t === 'today') { await Promise.all([loadToday(), loadBets(), loadSettings(), loadStats()]); renderToday(); watchWaiting(); }
     if (t === 'bet') { await Promise.all([loadStats(), loadMatches(), loadSettings()]); renderBet(); }
     if (t === 'live') { await renderLive(); liveTimer = setInterval(renderLive, 20000); }
   } catch (e) { toast(e.message, true); }

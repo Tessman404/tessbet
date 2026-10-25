@@ -241,6 +241,9 @@ def explain(c):
         r.append(("Les statistiques de forme (API-Football) vont dans le même sens : "
                   if c.get("af_agrees") else "Statistiques de forme (API-Football) : ")
                  + f"{round(c['af_prob'] * 100)} %.")
+    if c.get("tier") == "value":
+        r.insert(0, f"Bonne affaire : moins sûr qu'un pari fiable ({round(c['prob'] * 100)} % de chances), mais la cote "
+                    f"{fr(c['odds'], 2)} est au-dessus de sa vraie valeur ({fr(1 / c['prob'], 2)}). Mise conseillée réduite.")
     if not c["playable"]:
         r.append("À vérifier : aucun bookmaker français trouvé dans les données reçues.")
     return r
@@ -264,6 +267,32 @@ def select(cands, cfg, limit=None):
             picked.append(c)
             seen.add(c["event_id"])
         if len(picked) >= limit:
+            break
+    return picked
+
+
+def select_value(cands, cfg, exclude=()):
+    """« Bonne affaire » : un site propose une cote nettement au-dessus de la vraie chance de l'équipe.
+
+    Moins sûr qu'un pari fiable (40 à 62 % de chances), donc mise réduite ; Claude doit le confirmer."""
+    v = cfg.get("value") or {}
+    if not v.get("enabled", True):
+        return []
+    ok = [c for c in cands
+          if c["event_id"] not in exclude and c.get("playable") and c.get("af_agrees") is not False
+          and c["n_books"] >= v.get("min_books", 5) and c["prob"] >= v.get("min_prob", 0.40)
+          and v.get("min_odds", 1.6) <= c["odds"] <= v.get("max_odds", 3.5)
+          and c["edge"] >= v.get("min_edge", 0.03) and c["dispersion"] <= v.get("max_dispersion", 0.03)]
+    ok.sort(key=lambda c: (c["edge"], c["prob"]), reverse=True)
+    picked, seen = [], set()
+    for c in ok:
+        if c["event_id"] in seen:
+            continue
+        seen.add(c["event_id"])
+        c["tier"] = "value"
+        c["stake_pct"] = round(min(0.01, max(0.0025, 0.5 * kelly_stake_pct(c["prob"], c["odds"]))), 4)
+        picked.append(c)
+        if len(picked) >= v.get("review", 2):
             break
     return picked
 
@@ -337,7 +366,10 @@ def build_review_prompt(pool, today, now_date=None):
         kick = to_paris(parse_iso(c["commence"])).strftime("%H:%M")
         lines.append(f"- id={review_key(c)} | {c['sport']} | {c['league']} | {c['home']} contre {c['away']} | "
                      f"pari : {pick_label(c)} | cote {c['odds']:.2f} | probabilité estimée d'après les cotes "
-                     f"{round(c['prob'] * 100)} % | coup d'envoi {kick} (heure de Paris)")
+                     f"{round(c['prob'] * 100)} % | coup d'envoi {kick} (heure de Paris)"
+                     + (" | type : BONNE AFFAIRE (cote au-dessus de la valeur estimée, pari moins sûr qu'un favori : "
+                        "ne réponds \"confirme\" que si rien de concret ne s'y oppose et que le contexte le soutient)"
+                        if c.get("tier") == "value" else ""))
     return f"""{_when(today, now_date)} Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
 Un moteur a présélectionné les paris ci-dessous d'après les cotes des bookmakers. Ton travail : vérifier sur le web
 s'il existe une raison concrète de se méfier de chacun, puis rendre un verdict.
@@ -647,7 +679,9 @@ def demo_review(pool):
 def review_and_pick(cands, cfg, env, today, mode, warnings):
     """Présélection -> vérification par Claude -> choix final. Claude peut écarter, jamais ajouter."""
     cl = cfg.get("claude", {})
-    pool = select(cands, cfg, limit=cl.get("max_review", 6))
+    reliable = select(cands, cfg, limit=cl.get("max_review", 6))
+    value = select_value(cands, cfg, exclude={c["event_id"] for c in reliable})
+    pool = reliable + value
     info = {"reviewed": len(pool), "dropped": 0, "unavailable": False, "dropped_items": []}
     if not pool:
         return [], info
@@ -673,10 +707,16 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
         info["unavailable"] = True
         if cl.get("required", True):
             return [], info
-        return pool[:cfg["selection"]["max_picks"]], info
+        return reliable[:cfg["selection"]["max_picks"]], info  # jamais de « bonne affaire » sans Claude
     final = []
     for c in pool:
         v = verdicts.get(review_key(c))
+        if c.get("tier") == "value" and (not v or v["verdict"] != "confirme"):
+            if v:  # une bonne affaire n'est gardée que si Claude la confirme franchement
+                info["dropped"] += 1
+                info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "pick_label": pick_label(c) + " (bonne affaire)",
+                                              "resume": v["resume"]})
+            continue
         if not v or v["verdict"] == "ecarte":
             info["dropped"] += 1
             info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "pick_label": pick_label(c),
@@ -687,7 +727,8 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
             c["confidence"] = "Moyenne"
         final.append(c)
     final.sort(key=lambda c: c["claude"]["verdict"] != "confirme")  # tri stable : les « confirmé » d'abord
-    final = final[:cfg["selection"]["max_picks"]]
+    final = ([c for c in final if c.get("tier") != "value"][:cfg["selection"]["max_picks"]]
+             + [c for c in final if c.get("tier") == "value"][:(cfg.get("value") or {}).get("max", 1)])
     if mode != "demo" and cl.get("enabled", True) and cl.get("source") != "claude_task":
         add_written_analysis(final, cfg, env, today, warnings)
     return final, info
@@ -927,7 +968,8 @@ def notification_text(result):
         verdict = "Claude confirme" if s["claude"] and s["claude"]["verdict"] == "confirme" else "prudence"
         if not s["claude"]:
             verdict = "non vérifié"
-        lines.append(f"{s['kickoff_local']} {s['match']} : {s['pick_label']} @ {fr(s['odds'], 2)} "
+        lines.append(("💡 Bonne affaire (risquée) : " if s.get("tier") == "value" else "")
+                     + f"{s['kickoff_local']} {s['match']} : {s['pick_label']} @ {fr(s['odds'], 2)} "
                      f"({round(s['prob'] * 100)} %, {verdict})")
     title = f"Tessbet : {len(sel)} pari{'s' if len(sel) > 1 else ''} " + ("pour demain" if tomorrow else "du jour")
     return title, "\n".join(lines)
@@ -1025,11 +1067,15 @@ def run(mode=None, offset=None):
             "bookmaker": c["bookmaker"], "offers": c.get("offers", []),
             "prob": round(c["prob"], 4), "edge": round(c["edge"], 4),
             "kind": c["kind"], "confidence": c["confidence"], "confidence_score": c["confidence_score"],
-            "stake_pct": c["stake_pct"], "n_books": c["n_books"], "reasons": explain(c),
+            "stake_pct": c["stake_pct"], "n_books": c["n_books"], "reasons": explain(c), "tier": c.get("tier", "fiable"),
             "claude": c.get("claude")})
 
     analysed = len({c["event_id"] for c in cands})
-    msg = build_message(len(selections), analysed, info, cfg)
+    n_value = sum(s["tier"] == "value" for s in selections)
+    msg = build_message(len(selections) - n_value, analysed, info, cfg)
+    if n_value:
+        msg = (msg.replace("Aucun pari assez solide aujourd'hui.", "Aucun pari fiable aujourd'hui.").replace(" Ne pas parier est aussi une bonne décision.", "")
+               + " En plus : une bonne affaire, plus risquée (mise réduite).")
 
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],

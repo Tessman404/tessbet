@@ -35,6 +35,18 @@
     "exclude_draw": true
   },
 
+  "value": {
+    "enabled": true,
+    "max": 1,
+    "review": 2,
+    "min_prob": 0.40,
+    "min_odds": 1.60,
+    "max_odds": 3.50,
+    "min_edge": 0.03,
+    "min_books": 5,
+    "max_dispersion": 0.03
+  },
+
   "notify": {
     "enabled": true,
     "service": "mobile_app_iphone_de_thomas",
