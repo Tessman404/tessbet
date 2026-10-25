@@ -460,6 +460,13 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 
 <script>
 const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾' };
+/* Petit ballon devant chaque match : le sport enregistré, ou deviné d'après le championnat pour les anciennes données. */
+function sportOf(x) {
+  if (x.sport && SPORT[x.sport]) return x.sport;
+  const t = `${x.league || ''} ${x.league_key || ''}`.toLowerCase();
+  return /basket|nba|euroleague|wnba|ncaab/.test(t) ? 'basketball' : /tennis|atp|wta|itf|challenger/.test(t) ? 'tennis' : 'football';
+}
+const ball = x => SPORT[sportOf(x)] + ' ';
 const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null,
   matches: null, slip: { legs: [], mode: 'combo', book: '', stake: '', total: null, filter: 'all', confirmRefresh: false, refreshing: false, manualEl: null } };
 
@@ -742,8 +749,8 @@ function whyBox(d) {
   const near = d.near || [], dropped = d.claude_dropped_items || [];
   if (!near.length && !dropped.length) return null;
   const items = [
-    ...dropped.map(x => el('li', {}, el('b', { text: x.match }), ' – ' + x.pick_label, el('small', { text: 'Écarté par Claude : ' + x.resume }))),
-    ...near.map(x => el('li', {}, el('b', { text: x.match }), ` – ${x.pick_label} (cote ${odds(x.odds)}, ${x.kickoff_local})`,
+    ...dropped.map(x => el('li', {}, ball(x), el('b', { text: x.match }), ' – ' + x.pick_label, el('small', { text: 'Écarté par Claude : ' + x.resume }))),
+    ...near.map(x => el('li', {}, ball(x), el('b', { text: x.match }), ` – ${x.pick_label} (cote ${odds(x.odds)}, ${x.kickoff_local})`,
       el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))];
   return el('details', { class: 'why' }, el('summary', { text: 'Pourquoi aucun pari ?' }),
     el('ul', {}, items),
@@ -805,7 +812,7 @@ function comboLegs(b) {
     const r = l.result || 'pending', code = l.status && l.status.code;
     const hint = r === 'pending' && (code === 'won' || code === 'lost') ? (code === 'won' ? 'win' : 'lose') : null;
     return el('li', {},
-      el('div', { class: 'lg' }, el('b', { text: l.pick }), el('small', { text: `${l.match} – cote ${odds(l.odds)}` + liveSuffix(l) })),
+      el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: `${l.match} – cote ${odds(l.odds)}` + liveSuffix(l) })),
       r === 'pending'
         ? el('span', { class: 'lgb' }, [['win', '✓'], ['lose', '✗'], ['void', '○']].map(([k, sym]) =>
             el('button', { class: 'mini ' + k + (hint === k ? ' hint' : ''), type: 'button', title: names[k], 'aria-label': `${names[k]} : ${l.pick}`, text: sym, onclick: setLeg(i, k) })))
@@ -848,7 +855,7 @@ function betRow(b) {
     : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + liveSuffix(b);
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: combo ? `Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : b.pick }), el('div', { class: 'sub', text: sub })),
+      el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick }), el('div', { class: 'sub', text: sub })),
       res),
     combo ? comboLegs(b) : null,
     combo && b.result === 'pending' && b.status ? el('div', { class: 'badge ' + b.status.code, text: b.status.text }) : null,
@@ -941,7 +948,7 @@ function renderPast(days) {
     if (!d.selections.length) { box.append(el('p', { class: 'note', text: d.message || 'Aucun pari ce jour-là.' })); return; }
     d.selections.forEach(s => box.append(el('div', { class: 'bet' },
       el('div', { class: 'top' },
-        el('div', {}, el('div', { class: 'name', text: s.pick_label }),
+        el('div', {}, el('div', { class: 'name', text: ball(s) + s.pick_label }),
           el('div', { class: 'sub', text: `${s.match} – cote ${odds(s.odds)} – ${pct(s.prob)}` + (s.claude ? ' – Claude : ' + s.claude.verdict : '') }))),
       el('button', { class: 'btn small copy', type: 'button', text: 'Copier l\'analyse',
         onclick: async () => toast((await copyText(shareText(s))) ? 'Analyse copiée.' : 'Copie impossible sur cet appareil.') }),
@@ -963,7 +970,7 @@ function liveCard(b) {
   const badge = badgeOf(st, l, st && (st.code === 'won' || st.code === 'lost') ? ' (match terminé)' : '');
   const confirm = (r) => async () => { try { await api(`bets/${b.id}/result`, 'POST', { result: r }); await loadStats(); await renderLive(); toast('Résultat enregistré.'); } catch (e) { toast(e.message, true); } };
   return el('div', { class: 'livecard' },
-    el('div', { class: 'lt' }, el('span', { text: `${SPORT[b.sport] || ''} ${b.kickoff ? new Date(b.kickoff).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}` }),
+    el('div', { class: 'lt' }, el('span', { text: `${ball(b)}${b.kickoff ? new Date(b.kickoff).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}` }),
       stateTxt ? el('span', { text: stateTxt }) : el('span', { class: 'dot', text: '● EN DIRECT ' + (l.clock || '') })),
     el('div', { class: 'teams' }, el('span', { text: home || b.match }),
       el('span', { class: 'score', text: l ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
@@ -983,7 +990,7 @@ function liveComboCard(b) {
     const sc = lv ? `${lv.score[0]}-${lv.score[1]}` : '–';
     const clock = lv ? (lv.state === 'in' ? ' ' + (lv.clock || '') : lv.state === 'post' ? ' fini' : '') : '';
     return el('li', {},
-      el('div', { class: 'lg' }, el('b', { text: l.pick }), el('small', { text: l.match })),
+      el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: l.match })),
       el('span', { class: 'lsc', text: sc + clock }),
       el('span', { class: 'lst ' + code, text: r !== 'pending' ? done[r] : st ? st.text : 'Pas commencé' }),
       r === 'pending' && (code === 'won' || code === 'lost')
@@ -1148,7 +1155,7 @@ function legRow(l) {
     if (v > 1) { l.odds = round2(v); state.slip.total = null; renderSlip(); renderSlipbar(); } else inp.value = odds(l.odds);
   });
   return el('li', {},
-    el('div', { class: 'lg' }, el('b', { text: l.pick }), el('small', { text: l.match + (l.time ? ' · ' + l.time : '') })),
+    el('div', { class: 'lg' }, el('b', { text: ball(l) + l.pick }), el('small', { text: l.match + (l.time ? ' · ' + l.time : '') })),
     inp,
     el('button', { class: 'x', type: 'button', 'aria-label': 'Retirer : ' + l.pick, text: '×',
       onclick: () => { state.slip.legs = state.slip.legs.filter(x => x !== l); state.slip.total = null; renderBet(); } }));

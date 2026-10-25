@@ -294,7 +294,7 @@ def near_misses(cands, cfg, limit=3):
         if not why:
             continue
         seen.add(c["event_id"])
-        rows.append({"match": f"{c['home']} – {c['away']}", "league": c["league"], "pick_label": pick_label(c),
+        rows.append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "league": c["league"], "pick_label": pick_label(c),
                      "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
                      "prob": round(c["prob"], 3), "odds": round(c["odds"], 2), "reasons": why})
         if len(rows) >= limit:
@@ -679,7 +679,7 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
         v = verdicts.get(review_key(c))
         if not v or v["verdict"] == "ecarte":
             info["dropped"] += 1
-            info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c),
+            info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "pick_label": pick_label(c),
                                           "resume": v["resume"] if v else "pas vérifié par Claude"})
             continue
         c["claude"] = v
