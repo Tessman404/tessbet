@@ -120,8 +120,11 @@ def read_state(comp, home_idx):
     clock = st.get("displayClock", "")
     if comp.get("tennis"):  # tennis : score = sets gagnés, « horloge » = jeux de chaque set
         mine, other = teams[home_idx].get("linescores") or [], teams[1 - home_idx].get("linescores") or []
-        h = sum(1 for x in mine if x.get("winner"))
-        a = sum(1 for x in other if x.get("winner"))
+        def won(x, y):  # set gagné : indiqué par ESPN, ou score de set terminé (6 jeux avec 2 d'écart, ou 7)
+            gx, gy = int(x.get("value", 0) or 0), int(y.get("value", 0) or 0)
+            return bool(x.get("winner")) or (gx >= 6 and gx - gy >= 2) or (gx == 7 and gy >= 5)
+        h = sum(1 for x, y in zip(mine, other) if won(x, y))
+        a = sum(1 for x, y in zip(mine, other) if won(y, x))
         games = [f"{int(x.get('value', 0))}-{int(y.get('value', 0))}" for x, y in zip(mine, other)]
         if typ.get("state") == "post" and h == a:  # abandon : le vainqueur est indiqué à part
             if teams[home_idx].get("winner"):
