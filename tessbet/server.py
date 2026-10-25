@@ -673,7 +673,10 @@ def tg_call(method, payload):
 
 
 def tg_status():
-    return {"configured": bool(engine.load_env().get("TELEGRAM_TOKEN")), "chat": read_json(TG_PATH, {}).get("chat")}
+    t = read_json(TG_PATH, {})
+    return {"configured": bool(engine.load_env().get("TELEGRAM_TOKEN")), "chat": t.get("chat"),
+            "shared": [{k: x.get(k) for k in ("date", "match", "pick", "tier", "kickoff", "reported", "score")}
+                       for x in t.get("shared", []) if x.get("date", "") >= (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=1)).isoformat()]}
 
 
 def tg_find():

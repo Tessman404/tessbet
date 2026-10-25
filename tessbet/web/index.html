@@ -1520,7 +1520,13 @@ function tgPanel() {
     const test = st.chat ? el('button', { class: 'btn small', type: 'button', text: 'Envoyer un test', onclick: async () => {
       try { await api('telegram/share', 'POST', { test: true }); toast('Message de test envoyé.'); } catch (e) { toast(e.message, true); }
     } }) : null;
-    body.append(el('div', { class: 'btns' }, find, test), list,
+    const sh = st.shared || [];
+    const follow = sh.length ? el('details', { class: 'moves' }, el('summary', { text: `Résultats suivis pour le groupe (${sh.length})` }),
+      el('ul', { class: 'books' }, sh.map(x => el('li', {},
+        el('span', { class: 'bn', text: { win: '✅', lose: '❌' }[x.reported] || (x.reported ? '❔' : '⏳') }),
+        el('span', { class: 'bd', text: `${x.match} – ${x.pick}` + (x.tier === 'moins_sur' ? ' (moins sûr)' : x.tier === 'outsider' ? ' (outsider)' : '') }),
+        el('span', { class: 'bd', text: x.reported ? 'envoyé' : 'à la fin du match' }))))) : null;
+    body.append(el('div', { class: 'btns' }, find, test), list, follow,
       el('p', { class: 'note', text: 'Le bouton « Envoyer les pronos sur Telegram » apparaît dans Aujourd\'hui dès que l\'analyse est faite.' }));
   };
   draw();

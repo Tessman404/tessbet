@@ -457,7 +457,7 @@ def tg_results(now=None):
                 found = read_state(comp, idx)
                 break
         if not found or found["state"] != "post":
-            _tg_next[x["id"]] = now + 600
+            _tg_next[x["id"]] = now + (180 if found else 600)  # match en cours : on repasse toutes les 3 min
             continue
         res = final_result(pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away), found["score"])
         if res is None:
@@ -471,7 +471,7 @@ def tg_results(now=None):
                     + (" (bonne affaire)" if x.get("tier") == "value" else ""))
         except Exception as e:
             print("telegram :", str(e)[:100], file=sys.stderr)
-            _tg_next[x["id"]] = now + 600
+            _tg_next[x["id"]] = now + 300
             continue
         x["reported"] = res
         x["score"] = sc
