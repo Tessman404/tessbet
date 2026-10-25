@@ -1230,7 +1230,7 @@ function outcomeBtn(m, o) {
 function matchCard(m) {
   return el('article', { class: 'mcard' + (m.started ? ' started' : '') },
     el('div', { class: 'mt' }, el('span', { text: `${SPORT[m.sport] || ''} ${m.league}` }),
-      m.started ? el('span', { class: 'tag live', text: 'Déjà commencé' }) : null,
+      m.started ? el('span', { class: 'tag live', text: 'En cours' }) : null,
       m.outcomes.some(o => o.official) ? el('span', { class: 'tag', text: 'Proposé par Tessbet' }) : null, el('span', { text: m.kickoff_local })),
     el('h3', { class: 'mn', text: `${m.home} – ${m.away}` }),
     el('div', { class: 'outs' + (m.outcomes.length === 2 ? ' two' : '') }, m.outcomes.map(o => outcomeBtn(m, o))),

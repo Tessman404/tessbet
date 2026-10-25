@@ -616,6 +616,18 @@ def refresh_cost(cfg):
     return n or 7
 
 
+def finished_matches():
+    """Matchs que le suivi en direct a vus terminés (pour les retirer tout de suite de la liste)."""
+    lvs = read_json(os.path.join(DATA, "live.json"), {})
+    done = set()
+    for b in load_bets()["bets"]:
+        for i, leg in enumerate(b.get("legs") or [b]):
+            lv = lvs.get(f"{b['id']}:{i}" if b.get("legs") else b["id"], {}).get("live") or {}
+            if lv.get("state") == "post":
+                done.add(leg.get("match"))
+    return done
+
+
 def matches_payload():
     """Tous les matchs d'aujourd'hui et de demain avec leurs cotes, tirés de la mémoire (sans crédit)."""
     cfg, now = engine.load_config(), now_utc()
@@ -626,6 +638,8 @@ def matches_payload():
         events, newest = engine.cached_events(cfg)
     rows = engine.match_list(events, cfg, now)
     official = official_picks()
+    finished = finished_matches()
+    rows = [r for r in rows if not (r.get("started") and f"{r['home']} – {r['away']}" in finished)]
     for r in rows:
         for o in r["outcomes"]:
             o["official"] = (f"{r['home']} – {r['away']}", o["label"]) in official

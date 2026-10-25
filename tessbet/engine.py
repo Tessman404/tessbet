@@ -859,6 +859,8 @@ def cached_events(cfg):
 
 
 LIVE_WINDOW = dt.timedelta(hours=3)
+# durée habituelle d'un match : au-delà, il est terminé et sort de la liste
+LIVE_BY_SPORT = {"football": dt.timedelta(minutes=115), "basketball": dt.timedelta(minutes=155), "tennis": dt.timedelta(hours=3)}
 
 
 def match_list(events, cfg, now):
@@ -872,7 +874,7 @@ def match_list(events, cfg, now):
     for ev in events:
         start = parse_iso(ev["commence"])
         started = start <= now
-        if now - start > LIVE_WINDOW or (not started and to_paris(start).date() not in days):
+        if now - start > LIVE_BY_SPORT.get(ev["sport"], LIVE_WINDOW) or (not started and to_paris(start).date() not in days):
             continue
         by = {c["pick"]: c for c in analyse_event(ev, cfg)}
         order = [ev["home"], "Draw", ev["away"]] if ev["sport"] == "football" else [ev["home"], ev["away"]]
