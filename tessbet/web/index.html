@@ -403,6 +403,9 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .pasth { margin: 12px 0 8px; font-size: .9rem; font-weight: 600; color: var(--chalk-dim); }
 .pastlegs { margin: 8px 0 0; padding-left: 4px; list-style: none; font-size: .88rem; color: var(--chalk); }
 .pastlegs li { margin: 3px 0; overflow-wrap: anywhere; }
+.ticket.outsider { box-shadow: 0 0 0 2px #8e44ad, 0 10px 24px rgba(0,0,0,.28); }
+.obanner { border-color: #8e44ad; background: #f3e8fb; }
+.tierpanel .grid3 { margin-bottom: 6px; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -567,7 +570,8 @@ async function copyText(text) {
 
 function ticket(s) {
   const bank = state.stats ? state.stats.bankroll : 0;
-  const suggested = Math.max(0.5, Math.round(bank * s.stake_pct * 2) / 2);
+  const outsider = s.tier === 'outsider';
+  const suggested = outsider ? ((state.settings && state.settings.outsider_stake) || 1) : Math.max(0.5, Math.round(bank * s.stake_pct * 2) / 2);
   const conf = { 'Élevée': 'high', 'Bonne': 'good', 'Moyenne': 'mid' }[s.confidence] || 'mid';
   const input = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(suggested), id: 'stake-' + s.id, inputmode: 'decimal' });
   const books = state.stats ? state.stats.books : [];
@@ -609,9 +613,10 @@ function ticket(s) {
   const analyse = cl && cl.analyse ? el('details', {}, el('summary', { text: 'Lire l\'analyse complète de Claude' }),
     el('div', { class: 'analyse' }, cl.analyse.split(/\n\s*\n/).map(p => el('p', { text: p.trim() })))) : null;
   const value = s.tier === 'value';
-  return el('article', { class: 'ticket' + (value ? ' value' : '') },
+  return el('article', { class: 'ticket' + (value ? ' value' : '') + (outsider ? ' outsider' : '') },
     el('div', { class: 'body' },
       value ? el('div', { class: 'vbanner' }, el('b', { text: '💡 Bonne affaire' }), ` – plus risqué : ${pct(s.prob)} de chances. La cote vaut plus que le risque, mais tu perdras plus souvent : petite mise.`) : null,
+      outsider ? el('div', { class: 'vbanner obanner' }, el('b', { text: '🎲 Outsider – coup de poker' }), ` : seulement ${pct(s.prob)} de chances, mais la cote vaut plus que ce risque. Mise fixe de ${eur(suggested)}, jamais en combiné. Perdre plusieurs fois de suite est normal.`) : null,
       el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: s.kickoff_local })),
       el('h2', { class: 'pick', text: s.pick_label }),
       el('p', { class: 'match', text: s.match }),
@@ -620,7 +625,7 @@ function ticket(s) {
         el('div', { class: 'track' }, el('i', { style: `width:${Math.round(s.prob * 100)}%` }), marks)),
       el('div', { class: 'chips' },
         el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
-        value ? el('span', { class: 'chip deal', text: 'Pari risqué' }) : s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
+        outsider ? el('span', { class: 'chip deal', text: 'Outsider' }) : value ? el('span', { class: 'chip deal', text: 'Pari risqué' }) : s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
       offerChips,
       claudeBox,
       analyse,
@@ -636,7 +641,7 @@ function ticket(s) {
 async function saveBet(s, stakeValue, oddsValue, book, force) {
   if (!book) { toast('Choisis chez quel site tu as parié.', true); return; }
   try {
-    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: Number(oddsValue) || s.odds, stake: Number(stakeValue), sport: s.sport, book, force, league_key: s.league_key, pick_team: s.pick_team, kickoff: s.kickoff });
+    await api('bets', 'POST', { match: s.match, pick: s.pick_label, odds: Number(oddsValue) || s.odds, stake: Number(stakeValue), sport: s.sport, book, force, league_key: s.league_key, pick_team: s.pick_team, kickoff: s.kickoff, tier: s.tier });
     toast('Pari enregistré dans « Mes mises ».');
     await loadStats(); renderTrack();
   } catch (e) {
@@ -934,7 +939,7 @@ function betRow(b) {
     : `${b.match} – cote ${odds(b.odds)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') + boostTxt(b) + liveSuffix(b);
   return el('div', { class: 'bet' },
     el('div', { class: 'top' },
-      el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick }), el('div', { class: 'sub', text: sub }), potential),
+      el('div', {}, el('div', { class: 'name', text: combo ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick + (b.tier === 'outsider' ? ' 🎲' : b.tier === 'value' ? ' 💡' : '') }), el('div', { class: 'sub', text: sub }), potential),
       res),
     combo ? comboLegs(b) : null,
     combo && b.result === 'pending' && b.status ? el('div', { class: 'badge ' + b.status.code, text: b.status.text }) : null,
@@ -990,6 +995,8 @@ function renderTrack() {
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
       el('p', { text: over ? 'Limite dépassée. Arrête-toi pour aujourd\'hui.' : `Il te reste ${eur(s.daily_left)} à miser aujourd'hui. Tu peux changer la limite dans Réglages.` })),
+    tierPanel(s.outsiders, '🎲 Bilan outsiders', 'Outsiders proposés par Tessbet et enregistrés avec « J\'ai parié ». Juge après 1 à 2 mois : sur peu de paris, le hasard domine.'),
+    tierPanel(s.value_bets, '💡 Bilan bonnes affaires', ''),
     el('div', { class: 'sechead' }, el('h2', { class: 'section', text: 'Historique' }),
       el('button', { class: 'btn small refresh', type: 'button', text: '+ Ajouter un pari', onclick: () => showTab('bet') })));
   if (!state.bets.length) {
@@ -999,6 +1006,18 @@ function renderTrack() {
     state.bets.forEach(b => box.append(betRow(b)));
   }
   box.append(evolution(s));
+}
+
+/* Bilan à part d'une catégorie risquée (outsiders, bonnes affaires). */
+function tierPanel(t, title, note) {
+  if (!t || !t.n) return null;
+  return el('div', { class: 'panel tierpanel' }, el('h2', { text: title }),
+    el('div', { class: 'grid3' },
+      el('div', { class: 'cell' }, el('span', { text: 'Gagnés' }), el('strong', { text: `${t.won}/${t.played}` })),
+      el('div', { class: 'cell' }, el('span', { text: 'Résultat' }), el('strong', { class: t.profit > 0 ? 'pos' : t.profit < 0 ? 'neg' : '', text: signedEur(t.profit) })),
+      el('div', { class: 'cell' }, el('span', { text: 'Rendement' }), el('strong', { text: t.roi == null ? '–' : pct(t.roi, 1) }))),
+    t.pending ? el('p', { class: 'note', text: plural(t.pending, 'pari en cours', 'paris en cours') + '.' }) : null,
+    note ? el('p', { class: 'note', text: note }) : null);
 }
 
 /* Le solde de chaque site, juste sous le total : leur somme fait le total. */
@@ -1458,7 +1477,19 @@ function renderSettings(st) {
             try { await api('settings', 'POST', { cap: cap.value === '' ? null : Number(cap.value) }); await loadStats(); toast(cap.value === '' ? 'Limite automatique (5 % de ton argent).' : 'Limite enregistrée : ' + eur(Number(cap.value)) + ' par jour.'); }
             catch (e) { toast(e.message, true); }
           } })),
-        el('p', { class: 'note', text: 'Laisse vide pour la limite automatique (5 % de ton argent). Tessbet te prévient quand une mise la dépasse.' }))));
+        el('p', { class: 'note', text: 'Laisse vide pour la limite automatique (5 % de ton argent). Tessbet te prévient quand une mise la dépasse.' })),
+      outsiderPanel(st)));
+}
+
+function outsiderPanel(st) {
+  const inp = el('input', { type: 'text', inputmode: 'decimal', value: String(st.outsider_stake || 1).replace('.', ','), 'aria-label': 'Mise par outsider en euros' });
+  return el('div', { class: 'panel' }, el('h2', { text: '🎲 Mise par outsider' }),
+    el('div', { class: 'settings' }, inp, '€',
+      el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
+        try { await api('settings', 'POST', { outsider_stake: num(inp.value) }); await loadSettings(); toast('Mise par outsider : ' + eur(num(inp.value)) + '.'); }
+        catch (e) { toast(e.message, true); }
+      } })),
+    el('p', { class: 'note', text: 'Toujours la même petite mise : c\'est ce qui permet de tenir les séries de défaites, normales avec des outsiders.' }));
 }
 
 function tgPanel() {

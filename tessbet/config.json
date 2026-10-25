@@ -47,6 +47,18 @@
     "max_dispersion": 0.03
   },
 
+  "outsider": {
+    "enabled": true,
+    "max": 2,
+    "review": 3,
+    "min_prob": 0.15,
+    "min_odds": 2.80,
+    "max_odds": 8.00,
+    "min_edge": 0.05,
+    "min_books": 5,
+    "max_dispersion": 0.04
+  },
+
   "notify": {
     "enabled": true,
     "service": "mobile_app_iphone_de_thomas",

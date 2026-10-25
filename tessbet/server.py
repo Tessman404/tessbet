@@ -187,6 +187,17 @@ def book_balances(bets, moves=()):
     return books
 
 
+def tier_stats(bets, tier):
+    """Bilan à part d'une catégorie (outsiders, bonnes affaires) : pour juger si elle rapporte vraiment."""
+    mine = [b for b in bets if b.get("tier") == tier]
+    done = [b for b in mine if b["result"] in ("win", "lose")]
+    staked = round(sum(b["stake"] for b in done), 2)
+    profit = round(sum(bet_profit(b) for b in done), 2)
+    return {"n": len(mine), "played": len(done), "won": sum(b["result"] == "win" for b in done), "staked": staked,
+            "profit": profit, "roi": round(profit / staked, 4) if staked else None,
+            "pending": sum(b["result"] == "pending" for b in mine)}
+
+
 def compute_stats(d):
     cfg = engine.load_config()
     bets = sorted(d["bets"], key=lambda b: b.get("created", ""))
@@ -223,6 +234,7 @@ def compute_stats(d):
     by_book = sorted(books.values(), key=lambda x: -x["balance"])
     unplaced = round(d["bankroll_start"] - sum(x["deposit"] for x in by_book), 2)
     return {
+        "outsiders": tier_stats(bets, "outsider"), "value_bets": tier_stats(bets, "value"),
         "unplaced": unplaced, "added": added, "withdrawn": withdrawn, "invested": round(d["bankroll_start"] + added, 2),
         "moves": [dict(m, from_name=BOOK_NAMES.get(m.get("from"), ""), to_name=BOOK_NAMES.get(m.get("to"), "")) for m in reversed(moves)],
         "bankroll_start": d["bankroll_start"], "bankroll": bankroll, "profit": profit, "pending": pending,
@@ -291,6 +303,8 @@ def add_bet(body):
         return 400, {"error": "Il manque une information (match, pari, cote ou mise)."}
     book = str(body.get("book", "")).strip().lower()
     book = book if book in BOOK_NAMES else ""
+    if body.get("tier") in ("value", "outsider"):  # bonne affaire / outsider proposés par Tessbet : suivis à part
+        extra["tier"] = body["tier"]
     boost = clean_boost(body.get("boost"))
     if boost is None:
         return 400, {"error": "Boost invalide (entre 0 et 200 %)."}
@@ -507,6 +521,7 @@ def get_settings():
     return {"auto": bool(s.get("auto", True)), "live": bool(s.get("live", True)), "hour": hour,
             "horizon": 48 if s.get("horizon") == 48 else 24,  # 24 h = aujourd'hui, 48 h = aujourd'hui + demain
             "cap": get_cap_setting(), "asked": s.get("asked"),
+            "outsider_stake": float(s.get("outsider_stake") or 1.0),
             "source": engine.load_config().get("claude", {}).get("source", "api"),
             "routine": bool(os.environ.get("ROUTINE_ID") and os.environ.get("ROUTINE_TOKEN"))}
 
@@ -529,6 +544,14 @@ def set_settings(body):
         if not 5 <= h <= 14:
             return 400, {"error": "Choisis une heure entre 5 h et 14 h."}
         s["hour"] = h
+    if "outsider_stake" in body:
+        try:
+            v = round(float(str(body["outsider_stake"]).replace(",", ".")), 2)
+        except (TypeError, ValueError):
+            return 400, {"error": "Mise invalide."}
+        if not 0.1 <= v <= 50:
+            return 400, {"error": "Choisis une mise entre 0,10 € et 50 €."}
+        s["outsider_stake"] = v
     if "cap" in body:
         raw = body["cap"]
         if raw in (None, "", 0):
@@ -693,7 +716,8 @@ def share_text(days):
             out.append("Aucun prono assez solide ce jour-là.")
         for s in sels:
             cl = s.get("claude") or {}
-            head = "💡 <b>Bonne affaire (plus risquée)</b>\n" if s.get("tier") == "value" else ""
+            head = ("💡 <b>Bonne affaire (plus risquée)</b>\n" if s.get("tier") == "value"
+                    else "🎲 <b>Outsider (coup de poker, petite mise)</b>\n" if s.get("tier") == "outsider" else "")
             out.append(f"\n{head}{ball.get(s['sport'], '')} {_h(s['kickoff_local'])} · {_h(s['league'])}\n<b>{_h(s['match'])}</b>\n"
                        f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
                        + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
