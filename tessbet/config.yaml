@@ -1,5 +1,5 @@
 name: Tessbet
-version: "2.7.0"
+version: "2.8.0"
 slug: tessbet
 description: Paris du jour (foot, basket, tennis) vérifiés par Claude
 arch: [aarch64, amd64]
@@ -21,6 +21,7 @@ options:
   analysis_source: api
   mode: live
   notify_service: mobile_app_iphone_de_thomas
+  telegram_token: ""
 schema:
   odds_api_key: password
   api_football_key: password
@@ -31,3 +32,4 @@ schema:
   analysis_source: list(api|claude_task)
   mode: list(demo|live)
   notify_service: str
+  telegram_token: password

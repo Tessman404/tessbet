@@ -47,7 +47,7 @@ def load_env():
                     k, v = line.split("=", 1)
                     env[k.strip()] = v.strip()
     for k in ("ODDS_API_KEY", "API_FOOTBALL_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "ROUTINE_ID", "ROUTINE_TOKEN",
-              "HA_URL", "HA_TOKEN"):
+              "HA_URL", "HA_TOKEN", "TELEGRAM_TOKEN"):
         if os.environ.get(k):
             env[k] = os.environ[k]
     return env

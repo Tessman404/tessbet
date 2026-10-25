@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d2b22">
 <title>Tessbet</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20512%20512%22%3E%20%3Cdefs%3E%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%231d4d3b%22/%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%230a2219%22/%3E%3C/linearGradient%3E%20%3ClinearGradient%20id%3D%22tk%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23ffe066%22/%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23ffc61a%22/%3E%3C/linearGradient%3E%20%3CclipPath%20id%3D%22sq%22%3E%3Crect%20width%3D%22512%22%20height%3D%22512%22%20rx%3D%22116%22/%3E%3C/clipPath%3E%20%3C/defs%3E%20%3Cg%20clip-path%3D%22url%28%23sq%29%22%3E%20%3Crect%20width%3D%22512%22%20height%3D%22512%22%20fill%3D%22url%28%23bg%29%22/%3E%20%3Ccircle%20cx%3D%22256%22%20cy%3D%22256%22%20r%3D%22196%22%20fill%3D%22none%22%20stroke%3D%22%23cfe3d8%22%20stroke-opacity%3D%22.10%22%20stroke-width%3D%2210%22/%3E%20%3Cpath%20d%3D%22M0%20256H512%22%20stroke%3D%22%23cfe3d8%22%20stroke-opacity%3D%22.10%22%20stroke-width%3D%2210%22/%3E%20%3C/g%3E%20%3Cg%20transform%3D%22rotate%28-9%20256%20256%29%22%3E%20%3Cpath%20fill%3D%22url%28%23tk%29%22%20d%3D%22M110%20150h292a26%2026%200%200%201%2026%2026v38a28%2028%200%200%200%200%2056v66a26%2026%200%200%201-26%2026H110a26%2026%200%200%201-26-26v-66a28%2028%200%200%200%200-56v-38a26%2026%200%200%201%2026-26z%22/%3E%20%3Cpath%20d%3D%22M346%20168v176%22%20stroke%3D%22%230d2b22%22%20stroke-opacity%3D%22.45%22%20stroke-width%3D%227%22%20stroke-dasharray%3D%2214%2012%22%20stroke-linecap%3D%22round%22/%3E%20%3Cpath%20fill%3D%22%230d2b22%22%20d%3D%22M128%20196h176v44h-64v124h-48v-124h-64z%22/%3E%20%3Cpath%20d%3D%22M370%20306l14%2016%2026-38%22%20fill%3D%22none%22%20stroke%3D%22%230d2b22%22%20stroke-width%3D%2212%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%20%3C/g%3E%20%3C/svg%3E">
 <style>
 :root {
   --turf: #0d2b22;
@@ -150,7 +151,8 @@ h2.section { margin: 26px 0 10px; font: 700 1.35rem/1.2 var(--display); color: #
 /* ---- barre du haut ---- */
 .topbar { position: sticky; top: 0; z-index: 5; background: var(--turf-2); border-bottom: 1px solid var(--turf-3); padding-top: env(safe-area-inset-top); }
 .topbar .in { max-width: 1080px; margin: 0 auto; padding: 0 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-.brand { font: 700 1.5rem/1 var(--display); color: #fff; padding: 12px 0; }
+.brand { display: inline-flex; align-items: center; gap: 9px; font: 700 1.5rem/1 var(--display); color: #fff; padding: 12px 0; }
+.brand .mark svg { display: block; }
 .topbar nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; scrollbar-width: none; }
 .topbar nav button { background: transparent; border: 0; padding: 14px 14px 11px; color: var(--chalk-dim); font-weight: 600; white-space: nowrap; border-bottom: 3px solid transparent; }
 .topbar nav button:hover { color: #fff; }
@@ -389,6 +391,11 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .moveform select, .moveform input { min-height: 40px; border-radius: 8px; border: 1px solid #b9c8bf; padding: 0 8px; background: #fff; color: var(--ink); }
 .moveform input { width: 120px; }
 .moveform label { display: flex; align-items: center; gap: 6px; color: var(--chalk); font-size: .9rem; }
+.sharebar { margin: 4px 0 18px; }
+.sharebar .tg { width: auto; }
+.steps { margin: 0; padding-left: 20px; color: var(--chalk); font-size: .9rem; }
+.steps li { margin: 4px 0; }
+.panel .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -425,7 +432,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 </div>
 
 <div class="topbar"><div class="in">
-  <span class="brand">Tessbet</span>
+  <span class="brand"><span class="mark" aria-hidden="true"><svg width="30" height="30" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"> <defs> <linearGradient id="tbm-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d4d3b"/><stop offset="1" stop-color="#0a2219"/></linearGradient> <linearGradient id="tbm-tk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset="1" stop-color="#ffc61a"/></linearGradient> <clipPath id="tbm-sq"><rect width="512" height="512" rx="116"/></clipPath> </defs> <g clip-path="url(#tbm-sq)"> <rect width="512" height="512" fill="url(#tbm-bg)"/> <circle cx="256" cy="256" r="196" fill="none" stroke="#cfe3d8" stroke-opacity=".10" stroke-width="10"/> <path d="M0 256H512" stroke="#cfe3d8" stroke-opacity=".10" stroke-width="10"/> </g> <g transform="rotate(-9 256 256)"> <path fill="url(#tbm-tk)" d="M110 150h292a26 26 0 0 1 26 26v38a28 28 0 0 0 0 56v66a26 26 0 0 1-26 26H110a26 26 0 0 1-26-26v-66a28 28 0 0 0 0-56v-38a26 26 0 0 1 26-26z"/> <path d="M346 168v176" stroke="#0d2b22" stroke-opacity=".45" stroke-width="7" stroke-dasharray="14 12" stroke-linecap="round"/> <path fill="#0d2b22" d="M128 196h176v44h-64v124h-48v-124h-64z"/> <path d="M370 306l14 16 26-38" fill="none" stroke="#0d2b22" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/> </g> </svg></span>Tessbet</span>
   <nav aria-label="Navigation">
     <button type="button" data-tab="today" aria-current="page">Aujourd'hui</button>
     <button type="button" data-tab="bet">Matchs</button>
@@ -444,6 +451,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
     <div class="cmd" id="cmd" aria-label="Analyse du jour"></div>
     <p class="summary" id="summary"></p>
     <div id="tickets"></div>
+    <div class="sharebar" id="sharebar"></div>
     <details class="tech" id="tech" hidden><summary id="techsum"></summary><ul id="warnings"></ul></details>
     <p class="note" id="disclaimer"></p>
   </section>
@@ -829,10 +837,28 @@ function renderRecap() {
     tile('En direct', live ? plural(live, 'match', 'matchs') : '–', live ? 'en cours maintenant' : items.length ? plural(items.length, 'match à venir', 'matchs à venir') : 'Rien à suivre', 'live', live ? 'live' : ''));
 }
 
+/* Partager les pronos du jour (et les moins sûrs) sur le groupe Telegram des potes. */
+function renderShare() {
+  const box = document.getElementById('sharebar'); if (!box) return;
+  const done = activeDays().some(day => state[day] && state[day].generated_at && !state[day].waiting && state[day].date === dayDate(day));
+  box.replaceChildren();
+  if (!done) return;
+  const btn = el('button', { class: 'cta ghost tg', type: 'button' }, '📣 Envoyer les pronos sur Telegram');
+  btn.addEventListener('click', async () => {
+    if (!confirm('Envoyer les pronos du jour (et les moins sûrs) sur ton groupe Telegram ?')) return;
+    btn.disabled = true;
+    try { const r = await api('telegram/share', 'POST', {}); toast('Envoyé sur Telegram' + (r.chat ? ' (' + r.chat + ')' : '') + '.'); }
+    catch (e) { toast(e.message, true); }
+    btn.disabled = false;
+  });
+  box.append(btn);
+}
+
 function renderToday() {
   const d = state.today;
   if (!d) return;
   renderRecap();
+  renderShare();
   const o = overview();
   document.getElementById('date').textContent = fmtDay(parisToday());
   document.getElementById('demo-banner').hidden = d.mode !== 'demo';
@@ -1394,6 +1420,7 @@ function renderSettings(st) {
         el('label', { class: 'autobox' }, live, el('span', { text: 'Buts, mi-temps et résultat de mes paris' })),
         notifBtn,
         el('p', { class: 'note', id: 'notifstatus', text: state.today && state.today.notification ? 'iPhone : ' + state.today.notification : '' })),
+      tgPanel(),
       el('div', { class: 'panel' }, el('h2', { text: 'Limite de mise par jour' }),
         el('div', { class: 'settings' }, cap, '€',
           el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
@@ -1401,6 +1428,41 @@ function renderSettings(st) {
             catch (e) { toast(e.message, true); }
           } })),
         el('p', { class: 'note', text: 'Laisse vide pour la limite automatique (5 % de ton argent). Tessbet te prévient quand une mise la dépasse.' }))));
+}
+
+function tgPanel() {
+  const panel = el('div', { class: 'panel' }, el('h2', { text: 'Telegram (partage avec les potes)' }));
+  const body = el('div', {}); panel.append(body);
+  const draw = async () => {
+    body.replaceChildren(el('p', { class: 'note', text: 'Chargement…' }));
+    let st; try { st = await api('telegram'); } catch (e) { body.replaceChildren(el('p', { class: 'note', text: e.message })); return; }
+    body.replaceChildren();
+    if (!st.configured) {
+      body.append(el('ol', { class: 'steps' },
+        el('li', { text: 'Dans Telegram, ouvre @BotFather, envoie /newbot et choisis un nom (ex. Tessbet Pronos).' }),
+        el('li', { text: 'Copie le jeton qu\'il te donne et colle-le dans la configuration de l\'application Tessbet (case telegram_token), puis redémarre-la.' }),
+        el('li', { text: 'Ajoute ton bot dans le groupe avec tes potes et écris-y un message.' }),
+        el('li', { text: 'Reviens ici : « Chercher mon groupe ».' })));
+      return;
+    }
+    body.append(el('p', { class: 'note', text: st.chat ? 'Groupe choisi : ' + st.chat.title : 'Aucun groupe choisi. Ajoute le bot dans ton groupe, écris-y un message, puis cherche-le ici.' }));
+    const list = el('div', { class: 'btns' });
+    const find = el('button', { class: 'btn small', type: 'button', text: 'Chercher mon groupe', onclick: async () => {
+      try {
+        const r = await api('telegram/find', 'POST', {});
+        list.replaceChildren(...(r.chats.length ? r.chats.map(c => el('button', { class: 'btn small', type: 'button', text: (c.type === 'private' ? '👤 ' : '👥 ') + c.title,
+          onclick: async () => { try { await api('telegram/chat', 'POST', c); toast('Groupe choisi : ' + c.title); draw(); } catch (e) { toast(e.message, true); } } }))
+          : [el('p', { class: 'note', text: 'Aucun groupe trouvé : ajoute le bot au groupe, écris un message dedans, puis réessaie.' })]));
+      } catch (e) { toast(e.message, true); }
+    } });
+    const test = st.chat ? el('button', { class: 'btn small', type: 'button', text: 'Envoyer un test', onclick: async () => {
+      try { await api('telegram/share', 'POST', { test: true }); toast('Message de test envoyé.'); } catch (e) { toast(e.message, true); }
+    } }) : null;
+    body.append(el('div', { class: 'btns' }, find, test), list,
+      el('p', { class: 'note', text: 'Le bouton « Envoyer les pronos sur Telegram » apparaît dans Aujourd\'hui dès que l\'analyse est faite.' }));
+  };
+  draw();
+  return panel;
 }
 
 /* ---------------- chargement ---------------- */

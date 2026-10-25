@@ -12,6 +12,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -625,6 +627,109 @@ def refresh_matches(body):
     return 200, out
 
 
+# ---------------------------------------------------------------- Telegram (partager les pronos avec les potes)
+TG_PATH = os.path.join(DATA, "telegram.json")
+
+
+def tg_call(method, payload):
+    token = engine.load_env().get("TELEGRAM_TOKEN", "")
+    if not token:
+        raise RuntimeError("le jeton du bot Telegram n'est pas réglé dans la configuration de l'application")
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode("utf-8")).get("result")
+    except urllib.error.HTTPError as e:
+        try:
+            desc = json.loads(e.read().decode("utf-8")).get("description", "")
+        except Exception:
+            desc = ""
+        raise RuntimeError(f"Telegram a refusé ({e.code}{' : ' + desc if desc else ''})")
+
+
+def tg_status():
+    return {"configured": bool(engine.load_env().get("TELEGRAM_TOKEN")), "chat": read_json(TG_PATH, {}).get("chat")}
+
+
+def tg_find():
+    """Les groupes où le bot a vu passer un message (il faut l'ajouter au groupe puis y écrire un message)."""
+    try:
+        ups = tg_call("getUpdates", {"limit": 100}) or []
+    except Exception as e:
+        return 400, {"error": str(e)}
+    chats = {}
+    for u in ups:
+        for k in ("message", "my_chat_member", "channel_post", "edited_message"):
+            c = (u.get(k) or {}).get("chat")
+            if c:
+                chats[c["id"]] = {"id": c["id"], "title": c.get("title") or c.get("first_name") or str(c["id"]), "type": c.get("type")}
+    return 200, {"chats": list(chats.values())}
+
+
+def tg_set_chat(body):
+    if not body.get("id"):
+        return 400, {"error": "Choisis un groupe."}
+    engine.write_json(TG_PATH, {"chat": {"id": body["id"], "title": str(body.get("title", ""))[:80]}})
+    return 200, tg_status()
+
+
+def _h(t):
+    return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def share_text(days):
+    """Le message des pronos, prêt pour Telegram (paris retenus, bonne affaire, et les moins sûrs à titre indicatif)."""
+    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
+    out = []
+    for d in days:
+        when = dt.date.fromisoformat(d["date"])
+        jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+        out.append(f"🎯 <b>Tessbet – pronos du {jours[when.weekday()]} {when.day} {mois[when.month - 1]}</b>")
+        sels = d.get("selections", [])
+        if not sels:
+            out.append("Aucun prono assez solide ce jour-là.")
+        for s in sels:
+            cl = s.get("claude") or {}
+            head = "💡 <b>Bonne affaire (plus risquée)</b>\n" if s.get("tier") == "value" else ""
+            out.append(f"\n{head}{ball.get(s['sport'], '')} {_h(s['kickoff_local'])} · {_h(s['league'])}\n<b>{_h(s['match'])}</b>\n"
+                       f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
+                       + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
+        near = d.get("near") or []
+        if near:
+            out.append("\n🤔 <i>Moins sûrs (pas retenus, à vos risques) :</i>")
+            for n in near:
+                out.append(f"• {ball.get(n.get('sport'), '')} {_h(n['match'])} – {_h(n['pick_label'])} @ {engine.fr(n['odds'], 2)} ({round(n['prob'] * 100)} %)")
+        out.append("")
+    out.append("<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre. Joueurs Info Service 09 74 75 13 13.</i>")
+    return "\n".join(out).strip()
+
+
+def tg_share(body):
+    st = tg_status()
+    if not st["configured"]:
+        return 400, {"error": "Le jeton du bot Telegram n'est pas réglé (configuration de l'application Tessbet)."}
+    if not st["chat"]:
+        return 400, {"error": "Choisis d'abord le groupe Telegram dans Réglages."}
+    days = []
+    for day in (("today", "tomorrow") if get_settings()["horizon"] == 48 else ("today",)):
+        d = read_result(day_date(day))
+        if d and not d.get("waiting"):
+            days.append(d)
+    if body.get("test"):
+        text = "✅ Tessbet est bien relié à ce groupe. Les pronos arriveront ici."
+    elif not days:
+        return 400, {"error": "Pas encore d'analyse terminée à partager."}
+    else:
+        text = share_text(days)
+    try:
+        tg_call("sendMessage", {"chat_id": st["chat"]["id"], "text": text[:4000], "parse_mode": "HTML", "disable_web_page_preview": True})
+    except Exception as e:
+        return 400, {"error": str(e)}
+    return 200, {"ok": True, "chat": st["chat"]["title"]}
+
+
 def ha_payload():
     d = get_today()
     picks = [f"{s['match']} : {s['pick_label']} @ {s['odds']:.2f}".replace(".", ",") + f" ({round(s['prob'] * 100)} %)"
@@ -729,6 +834,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"keys": sorted(k for k in keys if k)})
             if path == "/api/history":
                 return self._send(200, get_history())
+            if path == "/api/telegram":
+                return self._send(200, tg_status())
             if path == "/api/ha":
                 return self._send(200, ha_payload())
         elif method == "POST":
@@ -758,6 +865,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/notify":
                 st = engine.notify_current(force=True)
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
+            if path == "/api/telegram/find":
+                return self._send(*tg_find())
+            if path == "/api/telegram/chat":
+                return self._send(*tg_set_chat(body))
+            if path == "/api/telegram/share":
+                return self._send(*tg_share(body))
             if path == "/api/moves":
                 return self._send(*add_move(body))
             if path == "/api/bankroll":

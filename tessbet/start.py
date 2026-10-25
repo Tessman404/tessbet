@@ -16,6 +16,7 @@ os.environ["ROUTINE_ID"] = (o.get("routine_id") or "").strip()
 os.environ["ROUTINE_TOKEN"] = (o.get("routine_token") or "").strip()
 os.environ["TESSBET_SOURCE"] = o.get("analysis_source", "api")
 os.environ["TESSBET_MODE"] = o.get("mode", "live")
+os.environ["TELEGRAM_TOKEN"] = (o.get("telegram_token") or "").strip()
 if os.environ.get("SUPERVISOR_TOKEN"):  # accès interne à Home Assistant, sans jeton à créer
     os.environ["HA_URL"] = "http://supervisor/core"
     os.environ["HA_TOKEN"] = os.environ["SUPERVISOR_TOKEN"]
