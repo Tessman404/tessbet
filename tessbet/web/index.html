@@ -860,10 +860,14 @@ function shareButton() {
   if (!done) return null;
   const btn = el('button', { class: 'cta ghost tg', type: 'button' }, '📣 Envoyer les pronos sur Telegram');
   btn.addEventListener('click', async () => {
-    if (!confirm('Envoyer les pronos du jour (et les moins sûrs) sur ton groupe Telegram ?')) return;
+    if (!confirm('Envoyer les pronos du jour (et les moins sûrs) sur ton groupe Telegram ? S\'il y a déjà eu un envoi aujourd\'hui, seuls les nouveaux matchs partent.')) return;
     btn.disabled = true;
     try { const r = await api('telegram/share', 'POST', {}); toast('Envoyé sur Telegram' + (r.chat ? ' (' + r.chat + ')' : '') + '.'); }
-    catch (e) { toast(e.message, true); }
+    catch (e) {
+      if (e.status === 409 && confirm(e.message + '\n\nTout renvoyer quand même ?')) {
+        try { await api('telegram/share', 'POST', { all: true }); toast('Tout a été renvoyé sur Telegram.'); } catch (e2) { toast(e2.message, true); }
+      } else if (e.status !== 409) toast(e.message, true);
+    }
     btn.disabled = false;
   });
   return btn;

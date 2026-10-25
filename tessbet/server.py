@@ -719,7 +719,7 @@ def _h(t):
     return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def share_text(days):
+def share_text(days, update=False):
     """Le message des pronos, prêt pour Telegram (paris retenus, bonne affaire, et les moins sûrs à titre indicatif)."""
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
     out = []
@@ -727,9 +727,10 @@ def share_text(days):
         when = dt.date.fromisoformat(d["date"])
         jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
         mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
-        out.append(f"🎯 <b>Tessbet – pronos du {jours[when.weekday()]} {when.day} {mois[when.month - 1]}</b>")
+        out.append(("🆕 <b>Tessbet – nouveautés du " if update else "🎯 <b>Tessbet – pronos du ")
+                   + f"{jours[when.weekday()]} {when.day} {mois[when.month - 1]}</b>")
         sels = d.get("selections", [])
-        if not sels:
+        if not sels and not update:
             out.append("Aucun prono assez solide ce jour-là.")
         for s in sels:
             cl = s.get("claude") or {}
@@ -764,7 +765,22 @@ def tg_share(body):
     elif not days:
         return 400, {"error": "Pas encore d'analyse terminée à partager."}
     else:
-        text = share_text(days)
+        # on n'envoie que ce qui n'a pas encore été partagé (une nouvelle analyse peut ajouter des matchs)
+        t0 = read_json(TG_PATH, {})
+        done = {(x["date"], x["match"], x["pick"], x.get("tier") == "moins_sur") for x in t0.get("shared", [])}
+        fresh = []
+        for d in days:
+            sel = [s for s in d.get("selections", []) if (d["date"], s["match"], s["pick_label"], False) not in done]
+            near = [n for n in d.get("near") or [] if (d["date"], n["match"], n["pick_label"], True) not in done]
+            if sel or near:
+                fresh.append(dict(d, selections=sel, near=near))
+        already = any(x["date"] in {d["date"] for d in days} for x in t0.get("shared", []))
+        if body.get("all") or not already:
+            text = share_text(days)
+        elif not fresh:
+            return 409, {"error": "Rien de nouveau depuis le dernier envoi sur Telegram.", "needs_force": True}
+        else:
+            text = share_text(fresh, update=True)
     try:
         tg_call("sendMessage", {"chat_id": st["chat"]["id"], "text": text[:4000], "parse_mode": "HTML", "disable_web_page_preview": True})
     except Exception as e:
