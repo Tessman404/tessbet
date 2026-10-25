@@ -23,6 +23,7 @@ SPORT_SLUGS = {
     "football": ["soccer/fra.1", "soccer/eng.1", "soccer/esp.1", "soccer/ger.1", "soccer/ita.1",
                  "soccer/uefa.champions", "soccer/uefa.europa"],
     "basketball": ["basketball/nba"],
+    "tennis": ["tennis/atp", "tennis/wta"],
 }
 
 
@@ -59,6 +60,8 @@ def fetch_events(slug, day):
 
     Le foot accepte une période en une seule demande ; le basket la refuse (erreur 400) : un jour à la fois."""
     d0, d1 = day - dt.timedelta(days=1), day + dt.timedelta(days=1)
+    if slug.startswith("tennis/"):
+        return tennis_events(slug, day)
     ranges = [f"{d0:%Y%m%d}-{d1:%Y%m%d}"] if slug.startswith("soccer/") else [f"{d:%Y%m%d}" for d in (d0, day, d1)]
     events, seen = [], set()
     for rng in ranges:
@@ -68,6 +71,26 @@ def fetch_events(slug, day):
                 seen.add(ev.get("id"))
                 events.append(ev)
     return events
+
+
+def tennis_events(slug, day):
+    """Tennis : ESPN range les matchs par tournoi ; on les remet à plat, joueur = « équipe »."""
+    data, _ = engine.http_json(f"{ESPN}/{slug}/scoreboard?dates={day:%Y%m%d}", {"User-Agent": "Mozilla/5.0 (Tessbet)"}, 15)
+    out = []
+    for tour in data.get("events", []):
+        for g in tour.get("groupings", []):
+            if "Doubles" in ((g.get("grouping") or {}).get("displayName") or ""):
+                continue
+            for c in g.get("competitions", []):
+                comps = []
+                for x in c.get("competitors", []):
+                    a = x.get("athlete") or {}
+                    name = a.get("displayName") or ""
+                    comps.append(dict(x, team={"id": a.get("id") or x.get("id"), "displayName": name, "name": name, "shortDisplayName": a.get("shortName") or name}))
+                if len(comps) == 2 and all(t["team"]["displayName"] for t in comps):
+                    out.append({"id": c.get("id"), "competitions": [dict(c, competitors=comps, tennis=True)]})
+    out.sort(key=lambda e: e["competitions"][0].get("date") or "", reverse=True)  # le match le plus récent d'abord
+    return out
 
 
 def find_event(events, home, away):
@@ -94,7 +117,20 @@ def read_state(comp, home_idx):
         except (TypeError, ValueError):
             return 0
     h, a = score(teams[home_idx]), score(teams[1 - home_idx])
-    return {"state": typ.get("state", "pre"), "name": typ.get("name", ""), "clock": st.get("displayClock", ""),
+    clock = st.get("displayClock", "")
+    if comp.get("tennis"):  # tennis : score = sets gagnés, « horloge » = jeux de chaque set
+        mine, other = teams[home_idx].get("linescores") or [], teams[1 - home_idx].get("linescores") or []
+        h = sum(1 for x in mine if x.get("winner"))
+        a = sum(1 for x in other if x.get("winner"))
+        games = [f"{int(x.get('value', 0))}-{int(y.get('value', 0))}" for x, y in zip(mine, other)]
+        if typ.get("state") == "post" and h == a:  # abandon : le vainqueur est indiqué à part
+            if teams[home_idx].get("winner"):
+                h += 1
+            elif teams[1 - home_idx].get("winner"):
+                a += 1
+        clock = (f"set {len(games)} : {games[-1]}" + (f" ({' '.join(games[:-1])})" if len(games) > 1 else "")) if typ.get("state") == "in" and games \
+            else " ".join(games) + (" (abandon)" if typ.get("name") == "STATUS_RETIRED" else "")
+    return {"state": typ.get("state", "pre"), "name": typ.get("name", ""), "clock": clock,
             "score": [h, a], "start": comp.get("date") or comp.get("startDate")}
 
 
