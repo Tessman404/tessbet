@@ -406,6 +406,8 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .ticket.outsider { box-shadow: 0 0 0 2px #8e44ad, 0 10px 24px rgba(0,0,0,.28); }
 .obanner { border-color: #8e44ad; background: #f3e8fb; }
 .tierpanel .grid3 { margin-bottom: 6px; }
+.why-extra { margin: 0 0 18px; padding: 12px 18px; }
+.why-extra .why { margin-top: 0; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -788,14 +790,14 @@ function renderCmd() {
 }
 
 /* « Pourquoi aucun pari ? » : les matchs les plus proches d'être retenus et ce qui les a bloqués. */
-function whyBox(d) {
+function whyBox(d, title = 'Pourquoi aucun pari ?') {
   const near = d.near || [], dropped = d.claude_dropped_items || [];
   if (!near.length && !dropped.length) return null;
   const items = [
     ...dropped.map(x => el('li', {}, ball(x), el('b', { text: x.match }), ' – ' + x.pick_label, el('small', { text: 'Écarté par Claude : ' + x.resume }))),
     ...near.map(x => el('li', {}, ball(x), el('b', { text: x.match }), ` – ${x.pick_label} (cote ${odds(x.odds)}, ${x.kickoff_local})`,
       el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))];
-  return el('details', { class: 'why' }, el('summary', { text: 'Pourquoi aucun pari ?' }),
+  return el('details', { class: 'why' }, el('summary', { text: title }),
     el('ul', {}, items),
     el('p', { text: (dropped.length ? 'Claude a écarté ' + plural(dropped.length, 'pari', 'paris') + ' après vérification. ' : '')
       + (near.length ? 'Voici aussi les matchs les plus proches des critères, sur ' + plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés') + '.' : '') }));
@@ -824,6 +826,10 @@ function daySection(i, multi) {
     d.selections.forEach(s => box.append(ticket(s)));
   }
   sec.append(box);
+  if (i.kind === 'done' && i.picks) {  // même avec des paris retenus : les moins sûrs restent consultables
+    const w = whyBox(d, '🤔 Matchs moins sûrs (pas retenus)');
+    if (w) sec.append(el('div', { class: 'empty why-extra' }, w));
+  }
   return sec;
 }
 
