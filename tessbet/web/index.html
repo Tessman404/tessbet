@@ -397,6 +397,12 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .steps { margin: 0; padding-left: 20px; color: var(--chalk); font-size: .9rem; }
 .steps li { margin: 4px 0; }
 .panel .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.dayline { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.dayline::first-letter { text-transform: uppercase; }
+.dayline span { font: 600 .95rem var(--text); }
+.pasth { margin: 12px 0 8px; font-size: .9rem; font-weight: 600; color: var(--chalk-dim); }
+.pastlegs { margin: 8px 0 0; padding-left: 4px; list-style: none; font-size: .88rem; color: var(--chalk); }
+.pastlegs li { margin: 3px 0; overflow-wrap: anywhere; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -1050,16 +1056,44 @@ function movesList(s) {
         } }))))));
 }
 
+function pastBet(b) {
+  const eff = b.eff_odds || b.odds;
+  const profit = b.result === 'win' ? gainOf(b) : b.result === 'lose' ? -b.stake : 0;
+  const mark = { win: '✅', lose: '❌', void: '↩️', pending: '⏳' }[b.result];
+  const res = b.result === 'pending' ? 'En cours' : b.result === 'void' ? 'Annulé' : signedEur(profit);
+  const legs = b.legs && b.legs.length ? el('ul', { class: 'pastlegs' }, b.legs.map(l => el('li', {},
+    `${{ win: '✅', lose: '❌', void: '↩️' }[l.result] || '⏳'} ${ball(l)}${l.pick} – ${l.match} @ ${odds(l.odds)}`))) : null;
+  return el('div', { class: 'bet' },
+    el('div', { class: 'top' },
+      el('div', {}, el('div', { class: 'name', text: `${mark} ` + (legs ? `🎟️ Combiné de ${plural(b.legs.length, 'match', 'matchs')}` : ball(b) + b.pick) }),
+        el('div', { class: 'sub', text: (legs ? '' : b.match + ' – ') + `cote ${odds(eff)} – mise ${eur(b.stake)}` + (b.book ? ' – ' + bookName(b.book) : '') })),
+      el('span', { class: 'res ' + (profit > 0 ? 'pos' : profit < 0 ? 'neg' : ''), text: res })),
+    legs);
+}
+
 function renderPast(days) {
   const box = document.getElementById('past'); box.replaceChildren();
-  if (!days.length) {
+  const byDate = {};
+  days.forEach(d => { (byDate[d.date] = byDate[d.date] || {}).d = d; });
+  state.bets.forEach(b => { const k = b.date; (byDate[k] = byDate[k] || {}); (byDate[k].bets = byDate[k].bets || []).push(b); });
+  const dates = Object.keys(byDate).filter(k => k <= parisToday()).sort().reverse();
+  if (!dates.length) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Rien pour l\'instant' }),
-      el('p', { text: 'Les paris proposés chaque jour restent ici, même si tu effaces la notification.' })));
+      el('p', { text: 'Les paris proposés chaque jour et tes propres paris restent ici, même si tu effaces la notification.' })));
     return;
   }
-  days.forEach(d => {
-    const day = new Date(d.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    box.append(el('h2', { class: 'section', text: day }));
+  dates.forEach(k => {
+    const { d, bets = [] } = byDate[k];
+    const settled = bets.filter(b => b.result === 'win' || b.result === 'lose');
+    const dayProfit = bets.reduce((t, b) => t + (b.result === 'win' ? gainOf(b) : b.result === 'lose' ? -b.stake : 0), 0);
+    box.append(el('h2', { class: 'section dayline' }, fmtDay(k),
+      settled.length ? el('span', { class: dayProfit > 0 ? 'pos' : dayProfit < 0 ? 'neg' : '', text: `${settled.filter(b => b.result === 'win').length}/${settled.length} gagnés · ${signedEur(dayProfit)}` }) : null));
+    if (bets.length) {
+      box.append(el('h3', { class: 'pasth', text: 'Mes paris' }));
+      bets.forEach(b => box.append(pastBet(b)));
+    }
+    box.append(el('h3', { class: 'pasth', text: 'Proposés par Tessbet' }));
+    if (!d) { box.append(el('p', { class: 'note', text: 'Pas d\'analyse ce jour-là.' })); return; }
     if (!d.selections.length) { box.append(el('p', { class: 'note', text: d.message || 'Aucun pari ce jour-là.' })); return; }
     d.selections.forEach(s => box.append(el('div', { class: 'bet' },
       el('div', { class: 'top' },
@@ -1516,7 +1550,7 @@ async function showTab(t) {
   clearInterval(liveTimer); liveTimer = null;
   renderSlipbar();
   try {
-    if (t === 'past') renderPast((await api('history')).days);
+    if (t === 'past') { const [h] = await Promise.all([api('history'), loadBets(), loadStats()]); renderPast(h.days); }
     if (t === 'track') { await Promise.all([loadStats(), loadBets()]); renderTrack(); }
     if (t === 'settings') { await Promise.all([loadStats(), loadToday(), loadSettings()]); renderSettings(state.settings); }
     if (t === 'today') { await Promise.all([loadToday(), loadBets(), loadSettings(), loadStats()]); renderToday(); watchWaiting(); }
