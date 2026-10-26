@@ -221,6 +221,17 @@ def pick_status(side, score):
     return "ton équipe mène" if mine > other else "égalité" if mine == other else "ton équipe est menée"
 
 
+TWO_UP_NOTE = "2 buts d'avance : payé par Winamax"
+
+
+def two_up(side, score):
+    """Foot, offre Winamax : dès que l'équipe choisie mène de 2 buts, le pari est payé, même si l'adversaire revient."""
+    if side not in ("home", "away") or not score:
+        return False
+    h, a = score
+    return (h - a if side == "home" else a - h) >= 2
+
+
 def final_result(side, score):
     h, a = score
     if side is None:
@@ -245,7 +256,7 @@ def tracked(bets):
                 continue
             out.append({"id": f"{b['id']}:{i}", "date": (leg.get("kickoff") or b.get("date") or "")[:10], "match": leg["match"], "kickoff": leg.get("kickoff"),
                         "pick": leg["pick"], "pick_team": leg.get("pick_team"), "sport": leg.get("sport") or "football",
-                        "league_key": leg.get("league_key"), "result": "pending", "shown": f"{leg['pick']} (combiné)"})
+                        "league_key": leg.get("league_key"), "result": "pending", "shown": f"{leg['pick']} (combiné)", "book": b.get("book")})
     return out
 
 
@@ -284,9 +295,13 @@ def bet_status(bet, lv):
     score = lv["score"]
     if lv["state"] == "post":
         r = final_result(side, score)
+        if r != "win" and lv.get("two_up"):
+            return {"code": "won", "text": f"Gagné ({TWO_UP_NOTE})"}
         return {"code": "won" if r == "win" else "lost", "text": "Gagné" if r == "win" else "Perdu"}
     if lv["state"] != "in":
         return None
+    if lv.get("two_up"):
+        return {"code": "won", "text": f"Déjà gagné ({TWO_UP_NOTE})"}
     h, a = score
     mine, other = (h, a) if side != "away" else (a, h)
     if side == "draw":
@@ -324,6 +339,8 @@ def messages(bet, home, away, cur, st, sport, first):
     if cur["state"] == "post" and not st.get("final"):
         res = final_result(side, sc)
         verdict = {"win": "semble GAGNÉ ✅", "lose": "semble PERDU ❌"}.get(res, "est terminé")
+        if res != "win" and st.get("two_up"):
+            verdict = f"est GAGNÉ ✅ ({TWO_UP_NOTE}, même si l'adversaire est revenu)"
         out.append(("final", f"🏁 Terminé : {line}",
                     f"Ton pari « {pick} » {verdict}. Confirme dans Tessbet pour mettre ton argent à jour."))
     return out
@@ -381,6 +398,9 @@ def tick(now=None):
         cur = read_state(comp, idx)
         cur["goal"] = last_goal(comp, idx)
         st["slug"] = slug
+        if (bet["sport"] == "football" and str(bet.get("book") or "").startswith("winamax") and cur["state"] == "in"
+                and two_up(pick_side(bet, home, away), cur["score"])):
+            st["two_up"] = True
         for key, title, message in messages(bet, home, away, cur, st, bet["sport"], first):
             try:
                 engine.send_phone(title, message, f"tessbet-{bet['id']}")
@@ -394,7 +414,8 @@ def tick(now=None):
             st["score"] = cur["score"]
         if first and "score" not in st:
             st["score"] = cur["score"]
-        st["live"] = {"score": cur["score"], "clock": cur["clock"], "state": cur["state"], "start": cur.get("start")}
+        st["live"] = {"score": cur["score"], "clock": cur["clock"], "state": cur["state"], "start": cur.get("start"),
+                      **({"two_up": True} if st.get("two_up") else {})}
         if cur["state"] == "post" and st.get("final"):
             st["done"] = True
         elif cur["state"] == "in":
@@ -455,8 +476,9 @@ def tg_results(now=None):
             kick = dt.datetime.fromisoformat(x["kickoff"].replace("Z", "+00:00")).timestamp()
         except Exception:
             kick = 0
-        if kick and now < kick + 80 * 60:  # pas avant la fin probable du match
-            _tg_next[x["id"]] = kick + 80 * 60
+        foot = x.get("sport") == "football"
+        if kick and now < kick + (0 if foot else 80 * 60):  # foot : suivi dès le coup d'envoi (2 buts d'avance) ; sinon à la fin probable
+            _tg_next[x["id"]] = kick + (0 if foot else 80 * 60)
             continue
         home, away = split_match(x["match"])
         slugs = [LEAGUE_SLUGS[x["league_key"]]] if x.get("league_key") in LEAGUE_SLUGS else SPORT_SLUGS.get(x["sport"], [])
@@ -472,21 +494,29 @@ def tg_results(now=None):
             if ev:
                 found = read_state(comp, idx)
                 break
+        side = pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away)
+        if foot and found and found["state"] == "in" and not x.get("two_up") and two_up(side, found["score"]):
+            x["two_up"], dup = True, True  # mémorisé (dup : on enregistre le fichier)
         if not found or found["state"] != "post":
-            _tg_next[x["id"]] = now + (180 if found else 600)  # match en cours : on repasse toutes les 3 min
+            _tg_next[x["id"]] = now + ((90 if foot else 180) if found else 600)  # match en cours : on repasse souvent
             continue
-        res = final_result(pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away), found["score"])
+        res = final_result(side, found["score"])
+        saved = res == "lose" and x.get("two_up")  # l'adversaire est revenu, mais le pari était déjà payé
+        if saved:
+            res = "win"
         if res is None:
             x["reported"] = "unknown"
             continue
-        sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "")
+        sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "") \
+            + (" – 2 buts d'avance" if saved else "")
         head = (("🔁 <b>Correction</b> : " if x.get("correction") and x["correction"] != res else "")
                 + ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
                 + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else ""))
         try:
             if send["results"] and x.get("correction") != res:  # correction : on ne renvoie que si le résultat change
                 tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} {(' @ ' + engine.fr(x['odds'], 2)) if x.get('odds') else ''}"
-                    + (" (bonne affaire)" if x.get("tier") == "value" else ""))
+                    + (" (bonne affaire)" if x.get("tier") == "value" else "")
+                    + (f"\n<i>{_esc(x['pick'].replace('Victoire de ', ''))} a mené de 2 buts : pari payé par Winamax, même si l'adversaire est revenu.</i>" if saved else ""))
         except Exception as e:
             print("telegram :", str(e)[:100], file=sys.stderr)
             _tg_next[x["id"]] = now + 300
