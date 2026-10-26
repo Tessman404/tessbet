@@ -526,7 +526,7 @@ def get_today(day="today"):
     return d
 
 
-def run_analysis(force=False, source=None, refire=False, day="today"):
+def run_analysis(force=False, source=None, refire=False, day="today", recheck=False):
     cfg = engine.load_config()
     d = read_result(day_date(day))
     if d and not force and cfg.get("mode") != "demo":
@@ -536,6 +536,7 @@ def run_analysis(force=False, source=None, refire=False, day="today"):
     p = subprocess.run([sys.executable, os.path.join(BASE, "engine.py")], capture_output=True, text=True, timeout=420,
                        env=dict(os.environ, TESSBET_NO_NOTIFY="1", **({"TESSBET_SOURCE": source} if source else {}),
                                 **({"TESSBET_REFIRE": "1"} if refire else {}),
+                                **({"TESSBET_RECHECK": "1"} if recheck else {}),
                                 **({"TESSBET_DAY": "tomorrow"} if day == "tomorrow" else {})))
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ["erreur inconnue"])[-1][:200]
@@ -836,6 +837,8 @@ def share_text(days, update=False):
         def drop_line(x):
             base = re.sub(r" \((bonne affaire|outsider)\)$", "", x["pick_label"])
             cote = f" @ {engine.fr(x['odds'], 2)}" if x.get("odds") else ""
+            if x.get("unverified"):
+                return f"⏳ {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote}\n   <i>pas encore vérifié par Claude</i>"
             return (f"❌ {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote}\n"
                     f"   <i>écarté par Claude : {_h(x.get('resume', ''))[:160]}</i>")
 
@@ -1081,7 +1084,8 @@ class Handler(BaseHTTPRequestHandler):
                 if src == "api" and not body.get("confirm"):
                     return self._send(400, {"error": "L'analyse par l'API coûte des crédits : confirmation nécessaire."})
                 res = run_analysis(force=bool(body.get("force")), source=src, refire=bool(body.get("refire")) and src == "claude_task",
-                                   day="tomorrow" if body.get("day") == "tomorrow" else "today")
+                                   day="tomorrow" if body.get("day") == "tomorrow" else "today",
+                                   recheck=bool(body.get("recheck")) and src == "claude_task")
                 return self._send(400 if "error" in res else 200, res)  # pas de 5xx : les proxys remplacent le message
             if path == "/api/bets":
                 return self._send(*add_bet(body))

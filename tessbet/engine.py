@@ -584,9 +584,26 @@ def _review_cache_file(today):
     return os.path.join(DATA, f"review_{today.isoformat()}.json")
 
 
-def round_keys(today):
-    """Demandes à Claude pour un même jour : la première, puis 2 compléments si de nouveaux matchs apparaissent."""
-    return [today.isoformat(), f"{today.isoformat()}-r2", f"{today.isoformat()}-r3"]
+EXTRA_ROUNDS = 5
+
+
+def round_keys(today, extra=False):
+    """Demandes à Claude pour un même jour : la première, puis 2 compléments si de nouveaux matchs apparaissent.
+    extra : vérifications supplémentaires demandées par Thomas (bouton « Faire vérifier »)."""
+    base = [today.isoformat(), f"{today.isoformat()}-r2", f"{today.isoformat()}-r3"]
+    return base + ([f"{today.isoformat()}-r{i}" for i in range(4, 4 + EXTRA_ROUNDS)] if extra else [])
+
+
+def _asked_path(today):
+    return os.path.join(DATA, f"review_asked_{today.isoformat()}.json")
+
+
+def rounds_asked(today):
+    try:
+        with open(_asked_path(today), encoding="utf-8") as f:
+            return set(json.load(f))
+    except (OSError, ValueError):
+        return set()
 
 
 def _rounds_path(today):
@@ -603,8 +620,8 @@ def rounds_done(today):
 
 def task_fetch_new(today, env):
     """Récupère les réponses de Claude pas encore rangées (demande du jour et compléments). True si du nouveau."""
-    done, new = rounds_done(today), False
-    for k in round_keys(today):
+    done, new, asked = rounds_done(today), False, rounds_asked(today)
+    for k in round_keys(today) + sorted(k for k in asked if k not in round_keys(today)):
         if k not in done and task_fetch_answer(today, env, k):
             new = True
     return new
@@ -723,16 +740,18 @@ def claude_review(pool, cfg, env, today, warnings=None):
             with open(cache_path, encoding="utf-8") as f:
                 cache = json.load(f)
         todo = [c for c in pool if review_key(c) not in cache]
-        done = rounds_done(today)
-        for k in round_keys(today):  # demande du jour, puis compléments pour les matchs apparus ensuite
+        done, recheck = rounds_done(today), bool(os.environ.get("TESSBET_RECHECK"))
+        for k in round_keys(today, extra=recheck):  # demande du jour, compléments, puis vérifications demandées par Thomas
             if not todo or k in done:
                 continue
+            if k not in round_keys(today):
+                write_json(_asked_path(today), sorted(rounds_asked(today) | {k}))
             task_request(pool if k == today.isoformat() else todo, today, env, k)  # d'abord la demande, ensuite on réveille Claude
             raise WaitingForClaude("en attente de l'analyse de Claude", routine_launch(today, env, k))
         if todo:  # plus de complément possible aujourd'hui : Claude n'a pas vu ces paris, donc on ne les propose pas
             if warnings is not None:
-                warnings.append(f"{len(todo)} pari{'s' if len(todo) > 1 else ''} apparu{'s' if len(todo) > 1 else ''} après la réponse de Claude : "
-                                "non vérifié, donc écarté.")
+                warnings.append(f"{len(todo)} pari{'s' if len(todo) > 1 else ''} pas encore vérifié{'s' if len(todo) > 1 else ''} par Claude : "
+                                "bouton « Faire vérifier » dans le détail.")
             return {k: v for k, v in cache.items() if k in {review_key(c) for c in pool}}
     if todo:
         key = env.get("ANTHROPIC_API_KEY")
@@ -893,6 +912,11 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
             info["combo_legs"].append(dict(c, claude=v))  # matchs confirmés par Claude : briques du combiné du jour
         if c.get("tier") == "combo":
             continue  # ces matchs ne servent qu'au combiné
+        if not v:  # Claude ne l'a pas encore vu : ni retenu ni écarté, en attente d'une vérification
+            info["unverified"] = info.get("unverified", 0) + 1
+            info["dropped_items"].append(dict(_drop_info(c), unverified=True, resume="pas encore vérifié par Claude",
+                                              pick_label=pick_label(c) + {"value": " (bonne affaire)", "outsider": " (outsider)"}.get(c.get("tier"), "")))
+            continue
         if c.get("tier") in ("value", "outsider") and (not v or v["verdict"] != "confirme"):
             if v:  # bonne affaire et outsider ne sont gardés que si Claude les confirme franchement
                 info["dropped"] += 1
@@ -1350,7 +1374,7 @@ def run(mode=None, offset=None):
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
               "combo": combo, "combo_note": combo_note,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
-              "claude_dropped_items": info.get("dropped_items", []), "near": near_misses(cands, cfg),
+              "claude_dropped_items": info.get("dropped_items", []), "unverified": info.get("unverified", 0), "near": near_misses(cands, cfg),
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}

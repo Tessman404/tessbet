@@ -839,20 +839,31 @@ function matchTeams(match, label, team) {
 }
 
 function whyBox(d, title = 'Pourquoi aucun pari ?') {
-  const near = d.near || [], dropped = d.claude_dropped_items || [];
-  if (!near.length && !dropped.length) return null;
+  const near = d.near || [], all = d.claude_dropped_items || [];
+  const dropped = all.filter(x => !x.unverified), waitingCheck = all.filter(x => x.unverified);
+  if (!near.length && !all.length) return null;
   const cat = x => / \(bonne affaire\)$/.test(x.pick_label) ? 'value' : / \(outsider\)$/.test(x.pick_label) ? 'outsider' : 'prono';
   const dropLi = x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), x.pick_team),
     x.odds ? ` – cote ${odds(x.odds)}` + (x.kickoff_local ? `, ${nightTxt(x.kickoff_local)}` : '') : '', el('small', { text: 'Écarté par Claude : ' + x.resume }));
+  const tierTxt = x => cat(x) === 'value' ? ' (bonne affaire)' : cat(x) === 'outsider' ? ' (outsider)' : '';
+  const waitLi = x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), x.pick_team),
+    x.odds ? ` – cote ${odds(x.odds)}` + (x.kickoff_local ? `, ${nightTxt(x.kickoff_local)}` : '') : '', tierTxt(x),
+    el('small', { text: 'Passe le tri, mais Claude ne l\'a pas encore vérifié.' }));
   const groups = [
+    ['⏳ En attente de vérification', 'Ni bons ni mauvais : Claude ne les a pas encore contrôlés, donc ils ne sont pas proposés.', waitingCheck.map(waitLi)],
     ['💡 Bonnes affaires écartées', 'Cote au-dessus de leur vraie valeur, mais Claude n\'a pas confirmé.', dropped.filter(x => cat(x) === 'value').map(dropLi)],
     ['🎲 Outsiders écartés', 'Claude n\'a pas trouvé de vraie raison d\'y croire.', dropped.filter(x => cat(x) === 'outsider').map(dropLi)],
     ['❌ Pronos écartés par Claude', 'Ils passaient le tri, mais Claude a trouvé un problème.', dropped.filter(x => cat(x) === 'prono').map(dropLi)],
     ['🤔 Trop justes', `Les plus proches des critères, sur ${plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés')}.`,
       near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}`,
         el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))]];
-  return el('details', { class: 'why' }, el('summary', { text: title }),
-    groups.filter(g => g[2].length).map(([h, sub, items]) => el('div', { class: 'whygrp' }, el('h4', { text: h }), el('p', { class: 'whysub', text: sub }), el('ul', {}, items))));
+  const day = d === state.tomorrow ? 'tomorrow' : 'today';
+  const checkBtn = waitingCheck.length > 0 && !d.waiting ? el('button', { class: 'btn small', type: 'button',
+    text: `Faire vérifier ${waitingCheck.length > 1 ? 'ces ' + waitingCheck.length + ' matchs' : 'ce match'} par Claude`, onclick: () => recheck(day, waitingCheck.length) }) : null;
+  return el('details', { class: 'why', ...(waitingCheck.length ? { open: '' } : {}) }, el('summary', { text: title }),
+    groups.filter(g => g[2].length).map(([h, sub, items]) => h.startsWith('⏳')
+      ? el('div', { class: 'whygrp' }, el('h4', { text: h }), el('p', { class: 'whysub', text: sub }), el('ul', {}, items), checkBtn)
+      : el('div', { class: 'whygrp' }, el('h4', { text: h }), el('p', { class: 'whysub', text: sub }), el('ul', {}, items))));
 }
 
 /* Le combiné du jour : 3 ou 4 matchs vérifiés par Claude, sur un seul site, petite mise. */
@@ -1684,6 +1695,20 @@ async function launch(source) {
     if (!waiting.length) toast('Analyse mise à jour.');
     else if (f && f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
     else if (f) toast('Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.', true);
+    else toast('Claude est prévenu. Le résultat arrivera ici tout seul.');
+  } catch (err) { state.busy = false; renderToday(); toast(err.message, true); }
+  watchWaiting();
+}
+async function recheck(day, n) {
+  if (state.busy) return;
+  if (!confirm(`Demander à Claude de vérifier ${n > 1 ? 'ces ' + n + ' matchs' : 'ce match'} ? Seuls les matchs pas encore vérifiés sont envoyés.`)) return;
+  state.busy = true; renderCmd();
+  try {
+    state[day] = await api('refresh', 'POST', { force: true, source: 'claude_task', day, recheck: true });
+    state.busy = false; renderToday();
+    const f = state[day].fire || {};
+    if (!state[day].waiting) toast('Analyse mise à jour.');
+    else if (f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
     else toast('Claude est prévenu. Le résultat arrivera ici tout seul.');
   } catch (err) { state.busy = false; renderToday(); toast(err.message, true); }
   watchWaiting();
