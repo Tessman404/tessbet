@@ -1002,6 +1002,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"keys": sorted(k for k in keys if k)})
             if path == "/api/history":
                 return self._send(200, get_history())
+            if path == "/api/apifootball/test":  # diagnostic : l'offre API-Football donne-t-elle accès aux matchs du jour ?
+                key = engine.load_env().get("API_FOOTBALL_KEY")
+                out = {"key": bool(key)}
+                try:
+                    st, _ = engine.http_json(f"{engine.AF_URL}/status", {"x-apisports-key": key})
+                    r = st.get("response") or {}
+                    out["plan"] = (r.get("subscription") or {}).get("plan")
+                    out["requests"] = r.get("requests")
+                    out["status_errors"] = st.get("errors")
+                    season = dt.date.today().year if dt.date.today().month >= 7 else dt.date.today().year - 1
+                    fx, _ = engine.http_json(f"{engine.AF_URL}/fixtures?date={today_paris()}&league=61&season={season}", {"x-apisports-key": key})
+                    out["fixtures_errors"] = fx.get("errors")
+                    out["fixtures_count"] = len(fx.get("response") or [])
+                except Exception as e:
+                    out["error"] = str(e)[:200]
+                return self._send(200, out)
             if path == "/api/telegram":
                 return self._send(200, tg_status())
             if path == "/api/ha":
