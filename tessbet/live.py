@@ -479,7 +479,7 @@ def tg_results(now=None):
                 + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else ""))
         try:
             if send["results"]:
-                tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} @ {engine.fr(x['odds'], 2)}"
+                tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} {(' @ ' + engine.fr(x['odds'], 2)) if x.get('odds') else ''}"
                     + (" (bonne affaire)" if x.get("tier") == "value" else ""))
         except Exception as e:
             print("telegram :", str(e)[:100], file=sys.stderr)
@@ -503,7 +503,7 @@ def tg_results(now=None):
                 lines.append(f"\n<b>{label} : {w}/{k}</b>")
                 for y in group:
                     mark = {"win": "✅", "lose": "❌"}.get(y["reported"], "❔")
-                    lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} @ {engine.fr(y['odds'], 2)}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))
+                    lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} {(' @ ' + engine.fr(y['odds'], 2)) if y.get('odds') else ''}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))
             try:
                 tg_send("\n".join(lines))
                 t.setdefault("bilans", []).append(x["date"])

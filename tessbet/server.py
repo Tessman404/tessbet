@@ -8,6 +8,7 @@ import datetime as dt
 import hashlib
 import json
 import math
+import re
 import os
 import subprocess
 import sys
@@ -807,6 +808,7 @@ def tg_filter(d, send):
         tier = s.get("tier", "fiable")
         return send["value"] if tier == "value" else send["outsider"] if tier == "outsider" else send["pronos"]
     return dict(d, selections=[s for s in d.get("selections", []) if keep(s)], near=(d.get("near") or []) if send["near"] else [],
+                claude_dropped_items=(d.get("claude_dropped_items") or []) if send["near"] else [],
                 combo=d.get("combo") if send["combo"] else None)
 
 
@@ -837,8 +839,14 @@ def share_text(days, update=False):
             for lg in cb["legs"]:
                 out.append(f"• {ball.get(lg['sport'], '')} {_h(lg['kickoff_local'])} {_tg_match(lg['match'], lg['pick_label'], lg.get('pick_team'))} @ {engine.fr(lg['odds'], 2)}")
         near = d.get("near") or []
-        if near:
+        dropped = d.get("claude_dropped_items") or []
+        if near or dropped:
             out.append("\n🤔 <i>Moins sûrs (pas retenus, à vos risques) :</i>")
+            for x in dropped:  # écartés par Claude après vérification : avec sa raison
+                base = re.sub(r" \((bonne affaire|outsider)\)$", "", x["pick_label"])
+                cote = f" @ {engine.fr(x['odds'], 2)}" if x.get("odds") else ""
+                out.append(f"• {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote} – "
+                           f"<i>écarté par Claude : {_h(x.get('resume', ''))[:160]}</i>")
             for n in near:
                 out.append(f"• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} ({round(n['prob'] * 100)} %)")
         out.append("")
@@ -870,9 +878,10 @@ def tg_share(body):
         for d in days:
             sel = [s for s in d.get("selections", []) if (d["date"], s["match"], s["pick_label"]) not in done]
             near = [n for n in d.get("near") or [] if (d["date"], n["match"], n["pick_label"]) not in done]
+            drop = [x for x in d.get("claude_dropped_items") or [] if (d["date"], x["match"], x["pick_label"]) not in done]
             cb = d.get("combo") if d.get("combo") and (d["date"], "combo:" + "+".join(l["match"] for l in d["combo"]["legs"]), "") not in done else None
-            if sel or near or cb:
-                fresh.append(dict(d, selections=sel, near=near, combo=cb))
+            if sel or near or cb or drop:
+                fresh.append(dict(d, selections=sel, near=near, combo=cb, claude_dropped_items=drop))
         already = any(x["date"] in {d["date"] for d in days} for x in t0.get("shared", []))
         if body.get("all") or not already:
             text = share_text(days)
@@ -899,13 +908,13 @@ def tg_share(body):
                 shared[k] = {"id": s["id"], "date": d["date"], "match": s["match"], "pick": s["pick_label"],
                              "pick_team": s.get("pick_team"), "sport": s["sport"], "league_key": s.get("league_key", ""),
                              "kickoff": s.get("kickoff"), "odds": s["odds"], "tier": s.get("tier", "fiable"), "reported": None}
-            for n in d.get("near") or []:  # les « moins sûrs » sont suivis aussi, à part
+            for n in (d.get("claude_dropped_items") or []) + (d.get("near") or []):  # les « moins sûrs » sont suivis aussi, à part
                 nid = n.get("id") or "n" + hashlib.md5((d["date"] + n["match"] + n["pick_label"]).encode()).hexdigest()[:9]
                 k = (d["date"], n["match"], n["pick_label"])
                 if k not in shared:
-                    shared[k] = {"id": nid, "date": d["date"], "match": n["match"], "pick": n["pick_label"],
-                                   "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
-                                   "kickoff": n.get("kickoff"), "odds": n["odds"], "tier": "moins_sur", "reported": None}
+                    shared[k] = {"id": nid, "date": d["date"], "match": n["match"], "pick": re.sub(r" \((bonne affaire|outsider)\)$", "", n["pick_label"]),
+                                 "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
+                                 "kickoff": n.get("kickoff"), "odds": n.get("odds"), "tier": "moins_sur", "reported": None}
             if d.get("combo"):  # repère pour ne pas renvoyer le même combiné (pas de suivi de résultat pour l'instant)
                 cm = "combo:" + "+".join(l["match"] for l in d["combo"]["legs"])
                 cid = "c" + hashlib.md5((d["date"] + cm).encode()).hexdigest()[:9]

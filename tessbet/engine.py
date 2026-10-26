@@ -843,6 +843,14 @@ def demo_review(pool):
     return out
 
 
+def _drop_info(c):
+    """Ce qu'on garde d'un pari écarté par Claude (affichage, Telegram, suivi du résultat)."""
+    return {"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "pick_label": pick_label(c), "pick_team": c["pick"],
+            "league": c["league"], "league_key": c.get("league_key", ""), "kickoff": c["commence"],
+            "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"), "odds": round(c["odds"], 2), "prob": round(c["prob"], 3),
+            "id": "d" + hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:9]}
+
+
 def review_and_pick(cands, cfg, env, today, mode, warnings):
     """Présélection -> vérification par Claude -> choix final. Claude peut écarter, jamais ajouter."""
     cl = cfg.get("claude", {})
@@ -888,14 +896,12 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
         if c.get("tier") in ("value", "outsider") and (not v or v["verdict"] != "confirme"):
             if v:  # bonne affaire et outsider ne sont gardés que si Claude les confirme franchement
                 info["dropped"] += 1
-                info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"],
-                                              "pick_label": pick_label(c) + (" (bonne affaire)" if c["tier"] == "value" else " (outsider)"),
-                                              "resume": v["resume"]})
+                info["dropped_items"].append(dict(_drop_info(c), pick_label=pick_label(c) + (" (bonne affaire)" if c["tier"] == "value" else " (outsider)"),
+                                                  resume=v["resume"]))
             continue
         if not v or v["verdict"] == "ecarte":
             info["dropped"] += 1
-            info["dropped_items"].append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "pick_label": pick_label(c),
-                                          "resume": v["resume"] if v else "pas vérifié par Claude"})
+            info["dropped_items"].append(dict(_drop_info(c), resume=v["resume"] if v else "pas vérifié par Claude"))
             continue
         c["claude"] = v
         if v["verdict"] == "prudence":
