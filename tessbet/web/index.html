@@ -538,6 +538,8 @@ function sportOf(x) {
   return /basket|nba|euroleague|wnba|ncaab/.test(t) ? 'basketball' : /hockey|nhl/.test(t) ? 'hockey' : /tennis|atp|wta|itf|challenger/.test(t) ? 'tennis' : 'football';
 }
 const ball = x => SPORT[sportOf(x)] + ' ';
+/* Match de la nuit (avant 7 h) : il compte dans la journée de la veille. */
+const nightTxt = hhmm => (parseInt(hhmm, 10) < 7 ? `🌙 ${hhmm} (nuit)` : hhmm);
 const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null,
   matches: null, slip: { legs: [], mode: 'combo', book: '', stake: '', total: null, filter: 'all', confirmRefresh: false, refreshing: false, manualEl: null } };
 
@@ -649,7 +651,7 @@ function ticket(s) {
     el('div', { class: 'body' },
       value ? el('div', { class: 'vbanner' }, el('b', { text: '💡 Bonne affaire' }), ` – plus risqué : ${pct(s.prob)} de chances. La cote vaut plus que le risque, mais tu perdras plus souvent : petite mise.`) : null,
       outsider ? el('div', { class: 'vbanner obanner' }, el('b', { text: '🎲 Outsider – coup de poker' }), ` : seulement ${pct(s.prob)} de chances, mais la cote vaut plus que ce risque. Mise fixe de ${eur(suggested)}, jamais en combiné. Perdre plusieurs fois de suite est normal.`) : null,
-      el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: s.kickoff_local })),
+      el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: nightTxt(s.kickoff_local) })),
       el('h2', { class: 'pick', text: s.pick_label }),
       el('p', { class: 'match', text: s.match }),
       el('div', { class: 'proba' },
@@ -837,7 +839,7 @@ function whyBox(d, title = 'Pourquoi aucun pari ?') {
   if (!near.length && !dropped.length) return null;
   const items = [
     ...dropped.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), null), / \((bonne affaire|outsider)\)$/.test(x.pick_label) ? ' ' + x.pick_label.match(/\(.*\)$/)[0] : '', el('small', { text: 'Écarté par Claude : ' + x.resume }))),
-    ...near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${x.kickoff_local}`,
+    ...near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}`,
       el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))];
   return el('details', { class: 'why' }, el('summary', { text: title }),
     el('ul', {}, items),
@@ -861,7 +863,7 @@ function comboCard(cb) {
       el('div', {}, el('h3', { text: '🎟️ Combiné du jour' }), el('p', { class: 'cbsub', text: `${plural(cb.legs.length, 'match', 'matchs')} confirmés par Claude · sur ${cb.site_name}` })),
       el('div', { class: 'cbodds' }, el('small', { text: 'Cote totale' }), el('b', { text: odds(cb.total_odds) }))),
     el('ul', { class: 'cblegs' }, cb.legs.map(l => el('li', {},
-      el('span', { class: 'cbtime', text: `${ball(l)}${l.kickoff_local}` }),
+      el('span', { class: 'cbtime', text: `${ball(l)}${nightTxt(l.kickoff_local)}` }),
       el('span', { class: 'cbmatch' }, matchTeams(l.match, l.pick_label, l.pick_team)),
       el('span', { class: 'cbodd', text: odds(l.odds) })))),
     el('div', { class: 'cbfoot' },
@@ -1333,7 +1335,7 @@ function matchCard(m) {
   return el('article', { class: 'mcard' + (m.started ? ' started' : '') },
     el('div', { class: 'mt' }, el('span', { text: `${SPORT[m.sport] || ''} ${m.league}` }),
       m.started ? el('span', { class: 'tag live', text: 'En cours' }) : null,
-      m.outcomes.some(o => o.official) ? el('span', { class: 'tag', text: 'Proposé par Tessbet' }) : null, el('span', { text: m.kickoff_local })),
+      m.outcomes.some(o => o.official) ? el('span', { class: 'tag', text: 'Proposé par Tessbet' }) : null, el('span', { text: nightTxt(m.kickoff_local) })),
     el('h3', { class: 'mn', text: `${m.home} – ${m.away}` }),
     el('div', { class: 'outs' + (m.outcomes.length === 2 ? ' two' : '') }, m.outcomes.map(o => outcomeBtn(m, o))),
     m.started ? el('p', { class: 'mnote', text: 'Les cotes sont celles d\'avant le match : corrige-les dans le ticket avec celles de ton site.' }) : null);

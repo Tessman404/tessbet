@@ -827,7 +827,7 @@ def share_text(days, update=False):
             cl = s.get("claude") or {}
             head = ("💡 <b>Bonne affaire (plus risquée)</b>\n" if s.get("tier") == "value"
                     else "🎲 <b>Outsider (coup de poker, petite mise)</b>\n" if s.get("tier") == "outsider" else "")
-            out.append(f"\n{head}{ball.get(s['sport'], '')} {_h(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
+            out.append(f"\n{head}{ball.get(s['sport'], '')} {('🌙 ' + _h(s['kickoff_local']) + ' (nuit)') if int(s['kickoff_local'][:2]) < 7 else _h(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
                        f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
                        + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
         cb = d.get("combo")

@@ -88,6 +88,30 @@ def to_paris(d_utc):
         return d_utc.astimezone(dt.timezone(dt.timedelta(hours=2 if summer else 1)))
 
 
+DAY_START_HOUR = 7  # une journée de paris : de 7 h à 7 h le lendemain (heure de Paris)
+
+
+def paris_dt(day, hour):
+    """Instant UTC correspondant à « tel jour, telle heure » à Paris."""
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.datetime(day.year, day.month, day.day, hour, tzinfo=ZoneInfo("Europe/Paris")).astimezone(dt.timezone.utc)
+    except Exception:
+        guess = dt.datetime(day.year, day.month, day.day, hour, tzinfo=dt.timezone.utc)
+        return guess - (to_paris(guess).utcoffset() or dt.timedelta(hours=1))
+
+
+def journee(d_utc):
+    """La journée Tessbet d'un match : un match entre minuit et 7 h compte pour la veille (match de la nuit)."""
+    p = to_paris(d_utc)
+    return p.date() - dt.timedelta(days=1) if p.hour < DAY_START_HOUR else p.date()
+
+
+def day_window(day):
+    """Les matchs d'une journée Tessbet : du jour à 7 h au lendemain 7 h."""
+    return paris_dt(day, DAY_START_HOUR), paris_dt(day + dt.timedelta(days=1), DAY_START_HOUR)
+
+
 def paris_date(now=None):
     """Date du jour à Paris (ou de l'instant donné)."""
     return to_paris(now or dt.datetime.now(dt.timezone.utc)).date()
@@ -1016,13 +1040,13 @@ def match_list(events, cfg, now):
 
     Un match commencé reste dans la liste 3 heures (on peut enregistrer un pari placé juste avant le coup d'envoi)."""
     cfg = dict(cfg, selection=dict(cfg["selection"], exclude_draw=False))
-    today = paris_date(now)
+    today = journee(now)
     days = {today, today + dt.timedelta(days=1)}
     rows = []
     for ev in events:
         start = parse_iso(ev["commence"])
         started = start <= now
-        if now - start > LIVE_BY_SPORT.get(ev["sport"], LIVE_WINDOW) or (not started and to_paris(start).date() not in days):
+        if now - start > LIVE_BY_SPORT.get(ev["sport"], LIVE_WINDOW) or (not started and journee(start) not in days):
             continue
         by = {c["pick"]: c for c in analyse_event(ev, cfg)}
         order = [ev["home"], "Draw", ev["away"]] if ev["sport"] == "football" else [ev["home"], ev["away"]]
@@ -1033,8 +1057,8 @@ def match_list(events, cfg, now):
         if len(outs) < 2:
             continue
         rows.append({"id": ev["id"], "sport": ev["sport"], "league": ev["league"], "league_key": ev.get("league_key", ""),
-                     "commence": ev["commence"], "date": (today if started else to_paris(start).date()).isoformat(),
-                     "started": started, "kickoff_local": to_paris(start).strftime("%H:%M"), "home": ev["home"], "away": ev["away"],
+                     "commence": ev["commence"], "date": (today if started else journee(start)).isoformat(),
+                     "started": started, "night": to_paris(start).hour < DAY_START_HOUR, "kickoff_local": to_paris(start).strftime("%H:%M"), "home": ev["home"], "away": ev["away"],
                      "n_books": by[order[0]]["n_books"] if order[0] in by else 0, "outcomes": outs})
     rows.sort(key=lambda r: (r["commence"], r["id"]))
     return rows
@@ -1054,7 +1078,7 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
     keys += [k for k in active if k.startswith("tennis_")][:caps["tennis"]]
     paris_now = to_paris(now)
     # fenêtre de 48 h (aujourd'hui + demain) pour le même prix : un appel = un crédit, quel que soit le nombre de matchs
-    end = (paris_now + dt.timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = to_paris(paris_dt(paris_now.date() + dt.timedelta(days=2), DAY_START_HOUR))  # jusqu'à après-demain 7 h (nuit de demain comprise)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     events = []
     books = cfg.get("bookmakers") or []
@@ -1252,9 +1276,10 @@ def run(mode=None, offset=None):
         events = demo_events(now, today)
     else:
         events, quota = fetch_live_events(cfg, env, now, warnings)
-        events = [e for e in events
-                  if (offset or now + dt.timedelta(minutes=10) <= parse_iso(e["commence"]))
-                  and to_paris(parse_iso(e["commence"])).date() == today]
+        lo, hi = day_window(today)  # la « journée » va jusqu'au lendemain 7 h : les matchs de la nuit (NBA, NHL…) en font partie
+        if not offset:
+            lo = now + dt.timedelta(minutes=10)
+        events = [e for e in events if lo <= parse_iso(e["commence"]) < hi]
 
     cands = []
     for ev in events:
