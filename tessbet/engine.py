@@ -1228,15 +1228,27 @@ def run(mode=None, offset=None):
         msg = (msg.replace("Aucun pari assez solide aujourd'hui.", "Aucun pari fiable aujourd'hui.").replace(" Ne pas parier est aussi une bonne décision.", "")
                + " En plus : " + " et ".join(extra) + ".")
 
-    combo = None
+    combo, combo_note = None, None
     if (cfg.get("combo") or {}).get("enabled", True):
         legs = [c for c in info.get("combo_legs", [])
                 if (cfg["combo"].get("leg_min_odds", 1.25) <= c["odds"] <= cfg["combo"].get("leg_max_odds", 2.2))
                 and c["prob"] >= cfg["combo"].get("leg_min_prob", 0.60)]
         combo = build_combo(legs, cfg)
+        if combo is None and not info.get("waiting"):
+            o = cfg["combo"]
+            if len(legs) < o.get("legs_min", 3):
+                combo_note = (f"Pas de combiné aujourd'hui : seulement {len(legs)} match{'s' if len(legs) > 1 else ''} confirmé{'s' if len(legs) > 1 else ''} "
+                              f"par Claude, il en faut {o.get('legs_min', 3)}.")
+            else:
+                top = sorted(legs, key=lambda c: -c["odds"])[:o.get("legs_max", 4)]
+                best_total = 1.0
+                for c in top:
+                    best_total *= c["odds"]
+                combo_note = (f"Pas de combiné aujourd'hui : avec les {len(legs)} matchs confirmés par Claude, la cote totale ne dépasse pas "
+                              f"{fr(best_total, 2)} (il faut au moins {fr(o.get('min_total', 2.5), 2)}), ou les chances seraient trop faibles.")
 
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
-              "combo": combo,
+              "combo": combo, "combo_note": combo_note,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
               "claude_dropped_items": info.get("dropped_items", []), "near": near_misses(cands, cfg),
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),

@@ -55,7 +55,7 @@
     "leg_min_prob": 0.60,
     "leg_min_odds": 1.25,
     "leg_max_odds": 2.20,
-    "min_total": 3.0,
+    "min_total": 2.5,
     "max_total": 8.0,
     "min_prob": 0.15,
     "sites": ["winamax", "unibet"]

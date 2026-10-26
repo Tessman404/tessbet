@@ -892,6 +892,7 @@ function daySection(i, multi) {
   }
   sec.append(box);
   if (i.kind === 'done' && d.combo) sec.append(comboCard(d.combo));
+  else if (i.kind === 'done' && d.combo_note) sec.append(el('p', { class: 'note combonote', text: '🎟️ ' + d.combo_note }));
   if (i.kind === 'done' && i.picks) {  // même avec des paris retenus : les moins sûrs restent consultables
     const w = whyBox(d, '🤔 Matchs moins sûrs (pas retenus)');
     if (w) sec.append(el('div', { class: 'empty why-extra' }, w));
