@@ -439,6 +439,10 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .switch input:focus-visible + .knob { outline: 3px solid var(--yellow); outline-offset: 2px; }
 .quota { margin: 10px 0 0; font-size: .9rem; color: var(--chalk); }
 .quota b { color: var(--yellow); }
+.whygrp { margin-top: 12px; }
+.whygrp h4 { margin: 0; font: 700 1rem/1.2 var(--display); color: #fff; }
+.whygrp .whysub { margin: 2px 0 0; font-size: .82rem; color: var(--chalk-dim); }
+.whygrp ul { margin-top: 4px; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -837,14 +841,18 @@ function matchTeams(match, label, team) {
 function whyBox(d, title = 'Pourquoi aucun pari ?') {
   const near = d.near || [], dropped = d.claude_dropped_items || [];
   if (!near.length && !dropped.length) return null;
-  const items = [
-    ...dropped.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), null), / \((bonne affaire|outsider)\)$/.test(x.pick_label) ? ' ' + x.pick_label.match(/\(.*\)$/)[0] : '', el('small', { text: 'Écarté par Claude : ' + x.resume }))),
-    ...near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}`,
-      el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))];
+  const cat = x => / \(bonne affaire\)$/.test(x.pick_label) ? 'value' : / \(outsider\)$/.test(x.pick_label) ? 'outsider' : 'prono';
+  const dropLi = x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), x.pick_team),
+    x.odds ? ` – cote ${odds(x.odds)}` + (x.kickoff_local ? `, ${nightTxt(x.kickoff_local)}` : '') : '', el('small', { text: 'Écarté par Claude : ' + x.resume }));
+  const groups = [
+    ['💡 Bonnes affaires écartées', 'Cote au-dessus de leur vraie valeur, mais Claude n\'a pas confirmé.', dropped.filter(x => cat(x) === 'value').map(dropLi)],
+    ['🎲 Outsiders écartés', 'Claude n\'a pas trouvé de vraie raison d\'y croire.', dropped.filter(x => cat(x) === 'outsider').map(dropLi)],
+    ['❌ Pronos écartés par Claude', 'Ils passaient le tri, mais Claude a trouvé un problème.', dropped.filter(x => cat(x) === 'prono').map(dropLi)],
+    ['🤔 Trop justes', `Les plus proches des critères, sur ${plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés')}.`,
+      near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}`,
+        el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))]];
   return el('details', { class: 'why' }, el('summary', { text: title }),
-    el('ul', {}, items),
-    el('p', { text: (dropped.length ? 'Claude a écarté ' + plural(dropped.length, 'pari', 'paris') + ' après vérification. ' : '')
-      + (near.length ? 'Voici aussi les matchs les plus proches des critères, sur ' + plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés') + '.' : '') }));
+    groups.filter(g => g[2].length).map(([h, sub, items]) => el('div', { class: 'whygrp' }, el('h4', { text: h }), el('p', { class: 'whysub', text: sub }), el('ul', {}, items))));
 }
 
 /* Le combiné du jour : 3 ou 4 matchs vérifiés par Claude, sur un seul site, petite mise. */
@@ -898,7 +906,7 @@ function daySection(i, multi) {
   if (i.kind === 'done' && d.combo) sec.append(comboCard(d.combo));
   else if (i.kind === 'done' && d.combo_note) sec.append(el('p', { class: 'note combonote', text: '🎟️ ' + d.combo_note }));
   if (i.kind === 'done' && i.picks) {  // même avec des paris retenus : les moins sûrs restent consultables
-    const w = whyBox(d, '🤔 Matchs moins sûrs (pas retenus)');
+    const w = whyBox(d, 'Les autres matchs : écartés et trop justes');
     if (w) sec.append(el('div', { class: 'empty why-extra' }, w));
   }
   return sec;

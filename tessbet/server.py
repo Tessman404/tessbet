@@ -823,32 +823,51 @@ def share_text(days, update=False):
         out.append(("🆕 <b>Tessbet – nouveautés du " if update else "🎯 <b>Tessbet – pronos du ")
                    + f"{jours[when.weekday()]} {when.day} {mois[when.month - 1]}</b>")
         sels = d.get("selections", [])
-        if not sels and not update:
-            out.append("Aucun prono assez solide ce jour-là.")
-        for s in sels:
+        dropped = d.get("claude_dropped_items") or []
+        cat = lambda x: "value" if x["pick_label"].endswith("(bonne affaire)") else "outsider" if x["pick_label"].endswith("(outsider)") else "prono"
+        night = lambda hhmm: ("🌙 " + _h(hhmm) + " (nuit)") if hhmm and int(hhmm[:2]) < 7 else _h(hhmm or "")
+
+        def pick_block(s):
             cl = s.get("claude") or {}
-            head = ("💡 <b>Bonne affaire (plus risquée)</b>\n" if s.get("tier") == "value"
-                    else "🎲 <b>Outsider (coup de poker, petite mise)</b>\n" if s.get("tier") == "outsider" else "")
-            out.append(f"\n{head}{ball.get(s['sport'], '')} {('🌙 ' + _h(s['kickoff_local']) + ' (nuit)') if int(s['kickoff_local'][:2]) < 7 else _h(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
-                       f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
-                       + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
+            return (f"{ball.get(s['sport'], '')} {night(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
+                    f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
+                    + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
+
+        def drop_line(x):
+            base = re.sub(r" \((bonne affaire|outsider)\)$", "", x["pick_label"])
+            cote = f" @ {engine.fr(x['odds'], 2)}" if x.get("odds") else ""
+            return (f"❌ {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote}\n"
+                    f"   <i>écarté par Claude : {_h(x.get('resume', ''))[:160]}</i>")
+
+        sections = [("fiable", "🎯 <b>Pronos</b>", "les plus sûrs, vérifiés par Claude"),
+                    ("value", "💡 <b>Bonne affaire</b>", "plus risquée, cote au-dessus de sa vraie valeur, mise réduite"),
+                    ("outsider", "🎲 <b>Outsiders</b>", "coup de poker, petite mise fixe")]
+        shown = False
+        for tier, title, sub in sections:
+            mine = [x for x in sels if x.get("tier", "fiable") == tier]
+            drop = [x for x in dropped if cat(x) == tier] if tier != "fiable" else []
+            if not mine and not drop:
+                continue
+            shown = True
+            out.append(f"\n{title} <i>({sub})</i>")
+            out += ["\n" + pick_block(x) for x in mine]
+            out += [drop_line(x) for x in drop]
+        if not shown and not update:
+            out.append("\nAucun prono assez solide ce jour-là.")
         cb = d.get("combo")
         if cb:
-            out.append(f"\n🎟️ <b>Combiné du jour</b> ({_h(cb['site_name'])}) – cote totale <b>{engine.fr(cb['total_odds'], 2)}</b>, "
-                       f"environ {round(cb['prob'] * 100)} % de chances, petite mise :")
+            out.append(f"\n🎟️ <b>Combiné du jour</b> <i>({_h(cb['site_name'])}, petite mise)</i> – cote totale <b>{engine.fr(cb['total_odds'], 2)}</b>, "
+                       f"environ {round(cb['prob'] * 100)} % de chances :")
             for lg in cb["legs"]:
-                out.append(f"• {ball.get(lg['sport'], '')} {_h(lg['kickoff_local'])} {_tg_match(lg['match'], lg['pick_label'], lg.get('pick_team'))} @ {engine.fr(lg['odds'], 2)}")
+                out.append(f"• {ball.get(lg['sport'], '')} {night(lg['kickoff_local'])} {_tg_match(lg['match'], lg['pick_label'], lg.get('pick_team'))} @ {engine.fr(lg['odds'], 2)}")
         near = d.get("near") or []
-        dropped = d.get("claude_dropped_items") or []
-        if near or dropped:
-            out.append("\n🤔 <i>Moins sûrs (pas retenus, à vos risques) :</i>")
-            for x in dropped:  # écartés par Claude après vérification : avec sa raison
-                base = re.sub(r" \((bonne affaire|outsider)\)$", "", x["pick_label"])
-                cote = f" @ {engine.fr(x['odds'], 2)}" if x.get("odds") else ""
-                out.append(f"• {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote} – "
-                           f"<i>écarté par Claude : {_h(x.get('resume', ''))[:160]}</i>")
+        plain_drop = [x for x in dropped if cat(x) == "prono"]
+        if near or plain_drop:
+            out.append("\n🤔 <b>Moins sûrs</b> <i>(pas retenus, à vos risques)</i>")
+            out += [drop_line(x) for x in plain_drop]
             for n in near:
-                out.append(f"• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} ({round(n['prob'] * 100)} %)")
+                out.append(f"• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} "
+                           f"({round(n['prob'] * 100)} %, trop juste)")
         out.append("")
     out.append("<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre. Joueurs Info Service 09 74 75 13 13.</i>")
     return "\n".join(out).strip()
