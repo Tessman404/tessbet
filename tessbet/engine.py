@@ -943,8 +943,10 @@ def enrich_football(cands, cfg, env, today, warnings):
         inj = by_fixture.get(fid, [])
         if inj:
             c["injuries"] = [f"{i['player']} ({i['team']}{', ' + i['reason'] if i['reason'] else ''})" for i in inj[:10]]
-        if not predictions_ok or calls >= af.get("max_calls", 25):
+        if not predictions_ok or calls >= af.get("max_predictions", 6) or c.get("_af_skip"):
             continue
+        if calls:
+            time.sleep(6.5)  # offre gratuite : 10 requêtes par minute au plus
         try:
             pred = af_get("/predictions", {"fixture": fid}, key)
             calls += 1
@@ -955,11 +957,10 @@ def enrich_football(cands, cfg, env, today, warnings):
             c["af_agrees"] = max(m, key=m.get) == side
             w = af.get("blend_weight", 0.2)
             c["prob"] = (1 - w) * c["prob"] + w * m[side]
-        except Exception as e:  # la forme est un bonus : on n'arrête jamais l'analyse pour ça
-            if "plan" in str(e).lower() or "Free" in str(e):
-                predictions_ok = False  # offre gratuite : pas de prédiction, on garde les blessés
-                continue
-            warnings.append(f"Forme indisponible pour {c['home']} - {c['away']} ({str(e)[:60]})")
+        except Exception as e:  # la forme est un bonus : on n'arrête jamais l'analyse pour ça, et on n'insiste pas
+            predictions_ok = False
+            if not ("plan" in str(e).lower() or "free" in str(e).lower() or "429" in str(e) or "too many" in str(e).lower()):
+                warnings.append(f"Forme indisponible ({str(e)[:60]})")
 
 
 # ---------------------------------------------------------------- récupération des cotes
@@ -1262,7 +1263,10 @@ def run(mode=None, offset=None):
     shortlist = sorted(cands, key=lambda c: c["prob"], reverse=True)[:12]
     shortlist = [c for c in shortlist if c["prob"] >= cfg["selection"]["min_prob"] - 0.05]
     if mode != "demo":
-        enrich_football(shortlist + [c for c in cands if c not in shortlist], cfg, env, today, warnings)  # absents connus pour tous les matchs de foot
+        rest = [c for c in cands if c not in shortlist]
+        for c in rest:
+            c["_af_skip"] = True  # prédiction de forme seulement pour les mieux placés ; absents pour tous
+        enrich_football(shortlist + rest, cfg, env, today, warnings)
         cands = [finalize(c) for c in cands]
     picks, info = review_and_pick(cands, cfg, env, today, mode, warnings)
 
