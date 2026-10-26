@@ -500,7 +500,7 @@ def tg_results(now=None):
                 if not group:
                     continue
                 w, k = count(group)
-                lines.append(f"\n<b>{label} : {w}/{k}</b>")
+                lines.append(f"\n<b><u>{label}</u> : {w}/{k}</b>")
                 for y in group:
                     mark = {"win": "✅", "lose": "❌"}.get(y["reported"], "❔")
                     lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} {(' @ ' + engine.fr(y['odds'], 2)) if y.get('odds') else ''}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))

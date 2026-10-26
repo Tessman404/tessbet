@@ -820,8 +820,8 @@ def share_text(days, update=False):
         when = dt.date.fromisoformat(d["date"])
         jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
         mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
-        out.append(("🆕 <b>Tessbet – nouveautés du " if update else "🎯 <b>Tessbet – pronos du ")
-                   + f"{jours[when.weekday()]} {when.day} {mois[when.month - 1]}</b>")
+        out.append(("🆕 <b><u>Tessbet – nouveautés du " if update else "🎯 <b><u>Tessbet – pronos du ")
+                   + f"{jours[when.weekday()]} {when.day} {mois[when.month - 1]}</u></b>")
         sels = d.get("selections", [])
         dropped = d.get("claude_dropped_items") or []
         cat = lambda x: "value" if x["pick_label"].endswith("(bonne affaire)") else "outsider" if x["pick_label"].endswith("(outsider)") else "prono"
@@ -839,9 +839,9 @@ def share_text(days, update=False):
             return (f"❌ {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote}\n"
                     f"   <i>écarté par Claude : {_h(x.get('resume', ''))[:160]}</i>")
 
-        sections = [("fiable", "🎯 <b>Pronos</b>", "les plus sûrs, vérifiés par Claude"),
-                    ("value", "💡 <b>Bonne affaire</b>", "plus risquée, cote au-dessus de sa vraie valeur, mise réduite"),
-                    ("outsider", "🎲 <b>Outsiders</b>", "coup de poker, petite mise fixe")]
+        sections = [("fiable", "🎯 <b><u>Pronos de confiance</u></b>", "les plus sûrs, vérifiés par Claude"),
+                    ("value", "💡 <b><u>Bonne affaire</u></b>", "plus risquée, cote au-dessus de sa vraie valeur, mise réduite"),
+                    ("outsider", "🎲 <b><u>Outsiders</u></b>", "coup de poker, petite mise fixe")]
         shown = False
         for tier, title, sub in sections:
             mine = [x for x in sels if x.get("tier", "fiable") == tier]
@@ -849,27 +849,27 @@ def share_text(days, update=False):
             if not mine and not drop:
                 continue
             shown = True
-            out.append(f"\n{title} <i>({sub})</i>")
+            out.append(f"\n\n{title}\n<i>{sub}</i>")
             out += ["\n" + pick_block(x) for x in mine]
-            out += [drop_line(x) for x in drop]
+            out += ["\n" + drop_line(x) for x in drop]
         if not shown and not update:
-            out.append("\nAucun prono assez solide ce jour-là.")
+            out.append("\n\nAucun prono assez solide ce jour-là.")
         cb = d.get("combo")
         if cb:
-            out.append(f"\n🎟️ <b>Combiné du jour</b> <i>({_h(cb['site_name'])}, petite mise)</i> – cote totale <b>{engine.fr(cb['total_odds'], 2)}</b>, "
-                       f"environ {round(cb['prob'] * 100)} % de chances :")
+            out.append(f"\n\n🎟️ <b><u>Combiné du jour</u></b>\n<i>{_h(cb['site_name'])}, petite mise</i> – cote totale <b>{engine.fr(cb['total_odds'], 2)}</b>, "
+                       f"environ {round(cb['prob'] * 100)} % de chances :\n")
             for lg in cb["legs"]:
                 out.append(f"• {ball.get(lg['sport'], '')} {night(lg['kickoff_local'])} {_tg_match(lg['match'], lg['pick_label'], lg.get('pick_team'))} @ {engine.fr(lg['odds'], 2)}")
         near = d.get("near") or []
         plain_drop = [x for x in dropped if cat(x) == "prono"]
         if near or plain_drop:
-            out.append("\n🤔 <b>Moins sûrs</b> <i>(pas retenus, à vos risques)</i>")
-            out += [drop_line(x) for x in plain_drop]
+            out.append("\n\n🤔 <b><u>Moins sûrs</u></b>\n<i>pas retenus, à vos risques</i>")
+            out += ["\n" + drop_line(x) for x in plain_drop]
             for n in near:
-                out.append(f"• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} "
+                out.append(f"\n• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} "
                            f"({round(n['prob'] * 100)} %, trop juste)")
         out.append("")
-    out.append("<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre. Joueurs Info Service 09 74 75 13 13.</i>")
+    out.append("\n<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre. Joueurs Info Service 09 74 75 13 13.</i>")
     return "\n".join(out).strip()
 
 
