@@ -376,7 +376,8 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .gainp b { color: var(--green); font-size: 1rem; }
 .vbanner { margin: -2px 0 10px; padding: 8px 10px; border: 1.5px dashed #c98a00; border-radius: 10px; background: #fff3cf; font-size: .86rem; color: var(--ink); }
 .ticket.value { box-shadow: 0 0 0 2px #c98a00, 0 10px 24px rgba(0,0,0,.28); }
-.recap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 6px 0 16px; }
+.recap { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 6px 0 16px; }
+@media (max-width: 980px) { .recap { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .recap { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rtile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 12px 14px; text-align: left; border: 1px solid var(--turf-3); border-radius: 14px; background: var(--turf-2); color: var(--chalk); }
 .rtile:hover { border-color: var(--chalk-dim); }
@@ -863,6 +864,16 @@ function renderRecap() {
   box.append(
     tile('Mon argent', eur(s.bankroll - s.pending), (s.by_book || []).filter(x => x.n || x.balance).map(x => `${x.name} ${eur(x.balance)}`).join(' · ') || 'Aucun site', 'track'),
     tile('Plus-value depuis le début', signedEur(s.profit), `${roi >= 0 ? '+' : '−'}${pct(Math.abs(roi), 1)} sur ${eur(base)} apportés`, 'track', s.profit > 0 ? 'up' : s.profit < 0 ? 'down' : ''),
+    (() => {  // chaque match parié compte une fois, même joué sur deux sites ou dans deux combinés
+      const seen = new Map();
+      for (const b of state.bets) for (const x of (b.legs && b.legs.length ? b.legs : [b])) {
+        const k = (x.match + '|' + x.pick).toLowerCase();
+        const r = b.legs && b.legs.length ? (x.result || 'pending') : b.result;
+        if (!seen.has(k) || seen.get(k) === 'pending') seen.set(k, r);
+      }
+      const rs = [...seen.values()], won = rs.filter(r => r === 'win').length, lost = rs.filter(r => r === 'lose').length, live = rs.filter(r => r === 'pending').length;
+      return tile('Paris joués', String(rs.length), `${won} gagné${won > 1 ? 's' : ''} · ${lost} perdu${lost > 1 ? 's' : ''}` + (live ? ` · ${live} en cours` : ''), 'track');
+    })(),
     tile('En jeu', eur(s.pending), pend.length ? `${plural(pend.length, 'pari', 'paris')} · gain potentiel +${eur(pot)}` : 'Aucun pari en cours', 'track'),
     tile('En direct', live ? plural(live, 'match', 'matchs') : '–', live ? 'en cours maintenant' : items.length ? plural(items.length, 'match à venir', 'matchs à venir') : 'Rien à suivre', 'live', live ? 'live' : ''));
 }
