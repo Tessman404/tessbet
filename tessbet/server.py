@@ -801,7 +801,7 @@ def tg_filter(d, send):
 
 def share_text(days, update=False):
     """Le message des pronos, prêt pour Telegram (paris retenus, bonne affaire, et les moins sûrs à titre indicatif)."""
-    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
+    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒"}
     out = []
     for d in days:
         when = dt.date.fromisoformat(d["date"])

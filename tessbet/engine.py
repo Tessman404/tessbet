@@ -479,6 +479,7 @@ Pour chaque pari, cherche des informations récentes (aujourd'hui et les dernier
 - football : blessés et suspendus, compositions probables, rotation (matchs de coupe rapprochés), enjeu du match, météo
 - basket : absents et repos de joueurs (surtout NBA), match à domicile ou à l'extérieur la veille, enjeu
 - tennis : forme physique, blessure ou abandon récent, surface, fatigue après un long match, doute sur la participation
+- hockey (NHL) : gardien titulaire annoncé, absents, deux matchs en deux soirs (back-to-back), domicile ou extérieur
 Regarde aussi si le match est maintenu.
 
 Règles strictes :
@@ -925,7 +926,8 @@ def enrich_football(cands, cfg, env, today, warnings):
 
 # ---------------------------------------------------------------- récupération des cotes
 def sport_of(key):
-    return "football" if key.startswith("soccer") else "basketball" if key.startswith("basketball") else "tennis"
+    return ("football" if key.startswith("soccer") else "basketball" if key.startswith("basketball")
+            else "hockey" if key.startswith("icehockey") else "tennis")
 
 
 def convert_event(e, key, title):
@@ -966,7 +968,8 @@ def cached_events(cfg):
 
 LIVE_WINDOW = dt.timedelta(hours=3)
 # durée habituelle d'un match : au-delà, il est terminé et sort de la liste
-LIVE_BY_SPORT = {"football": dt.timedelta(minutes=115), "basketball": dt.timedelta(minutes=155), "tennis": dt.timedelta(hours=3)}
+LIVE_BY_SPORT = {"football": dt.timedelta(minutes=115), "basketball": dt.timedelta(minutes=155), "tennis": dt.timedelta(hours=3),
+                 "hockey": dt.timedelta(minutes=170)}
 
 
 def match_list(events, cfg, now):
@@ -1007,6 +1010,7 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
     caps = cfg["max_calls_per_sport"]
     keys = [k for k in cfg["leagues"]["football"] if k in active][:caps["football"]]
     keys += [k for k in cfg["leagues"]["basketball"] if k in active][:caps["basketball"]]
+    keys += [k for k in cfg["leagues"].get("hockey", []) if k in active][:caps.get("hockey", 1)]
     keys += [k for k in active if k.startswith("tennis_")][:caps["tennis"]]
     paris_now = to_paris(now)
     # fenêtre de 48 h (aujourd'hui + demain) pour le même prix : un appel = un crédit, quel que soit le nombre de matchs

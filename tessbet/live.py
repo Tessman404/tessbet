@@ -18,12 +18,16 @@ LEAGUE_SLUGS = {
     "soccer_spain_la_liga": "soccer/esp.1", "soccer_germany_bundesliga": "soccer/ger.1",
     "soccer_italy_serie_a": "soccer/ita.1", "soccer_uefa_champs_league": "soccer/uefa.champions",
     "soccer_uefa_europa_league": "soccer/uefa.europa", "basketball_nba": "basketball/nba",
+    "soccer_france_ligue_two": "soccer/fra.2", "soccer_netherlands_eredivisie": "soccer/ned.1", "soccer_portugal_primeira_liga": "soccer/por.1",
+    "soccer_efl_champ": "soccer/eng.2", "soccer_belgium_first_div": "soccer/bel.1", "soccer_turkey_super_league": "soccer/tur.1",
+    "icehockey_nhl": "hockey/nhl",
 }
 SPORT_SLUGS = {
     "football": ["soccer/fra.1", "soccer/eng.1", "soccer/esp.1", "soccer/ger.1", "soccer/ita.1",
-                 "soccer/uefa.champions", "soccer/uefa.europa"],
+                 "soccer/uefa.champions", "soccer/uefa.europa", "soccer/fra.2", "soccer/ned.1", "soccer/por.1", "soccer/eng.2", "soccer/bel.1", "soccer/tur.1"],
     "basketball": ["basketball/nba"],
     "tennis": ["tennis/atp", "tennis/wta"],
+    "hockey": ["hockey/nhl"],
 }
 
 
@@ -431,7 +435,7 @@ def tg_results(now=None):
     if not shared:
         return 0
     sent, cache = 0, {}
-    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
+    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒"}
     send = dict({"results": True, "bilan": True}, **(t.get("send") or {}))
     for x in shared:
         if x.get("reported") or now < _tg_next.get(x["id"], 0) or x.get("tier") == "combo_marker":

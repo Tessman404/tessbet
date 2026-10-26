@@ -528,12 +528,12 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script>
-const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾' };
+const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾', hockey: '🏒' };
 /* Petit ballon devant chaque match : le sport enregistré, ou deviné d'après le championnat pour les anciennes données. */
 function sportOf(x) {
   if (x.sport && SPORT[x.sport]) return x.sport;
   const t = `${x.league || ''} ${x.league_key || ''}`.toLowerCase();
-  return /basket|nba|euroleague|wnba|ncaab/.test(t) ? 'basketball' : /tennis|atp|wta|itf|challenger/.test(t) ? 'tennis' : 'football';
+  return /basket|nba|euroleague|wnba|ncaab/.test(t) ? 'basketball' : /hockey|nhl/.test(t) ? 'hockey' : /tennis|atp|wta|itf|challenger/.test(t) ? 'tennis' : 'football';
 }
 const ball = x => SPORT[sportOf(x)] + ' ';
 const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null,
@@ -1367,7 +1367,7 @@ function renderMatchList() {
   if (d.mode === 'demo') box.append(el('div', { class: 'banner', text: 'Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d\'après cet écran.' }));
   box.append(el('p', { class: 'summary', text: 'Choisis un résultat pour l\'ajouter à ton ticket, seul ou avec d\'autres en combiné. Les matchs repérés « Proposé par Tessbet » sont ceux que l\'analyse a retenus ; tous les autres sont des paris à ton initiative.' }));
   const pills = el('div', { class: 'pills', role: 'group', 'aria-label': 'Sport' },
-    [['all', 'Tous'], ['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis']].filter(([k]) => k === 'all' || count(k))
+    [['all', 'Tous'], ['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis'], ['hockey', 'Hockey']].filter(([k]) => k === 'all' || count(k))
       .map(([k, t]) => el('button', { class: 'pill' + (s.filter === k ? ' on' : ''), type: 'button', 'aria-pressed': String(s.filter === k), text: `${t} ${count(k)}`,
         onclick: () => { s.filter = k; renderMatchList(); } })));
   box.append(el('div', { class: 'mtools' }, pills, refreshBlock(d)));
@@ -1387,7 +1387,7 @@ function renderMatchList() {
 
 /* Ajout à la main : un match qui n'est pas dans la liste. */
 function buildManual() {
-  const sport = el('select', { 'aria-label': 'Sport' }, [['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis']].map(([v, t]) => el('option', { value: v, text: t })));
+  const sport = el('select', { 'aria-label': 'Sport' }, [['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis'], ['hockey', 'Hockey']].map(([v, t]) => el('option', { value: v, text: t })));
   const t1 = el('input', { type: 'text', placeholder: 'Équipe 1 (ex. Paris SG)', 'aria-label': 'Équipe ou joueur 1', maxlength: '60', autocomplete: 'off' });
   const t2 = el('input', { type: 'text', placeholder: 'Équipe 2 (ex. Lyon)', 'aria-label': 'Équipe ou joueur 2', maxlength: '60', autocomplete: 'off' });
   const pick = el('select', { 'aria-label': 'Ton pari' });
