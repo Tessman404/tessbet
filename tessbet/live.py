@@ -175,6 +175,8 @@ def read_state(comp, home_idx):
                 h += 1
             elif teams[1 - home_idx].get("winner"):
                 a += 1
+        if typ.get("state") == "post" and h == a:  # fini mais sets à égalité : données incomplètes, on attend la mise à jour
+            typ = dict(typ, state="in")
         clock = (f"set {len(games)} : {games[-1]}" + (f" ({' '.join(games[:-1])})" if len(games) > 1 else "")) if typ.get("state") == "in" and games \
             else " ".join(games) + (" (abandon)" if typ.get("name") == "STATUS_RETIRED" else "")
     return {"state": typ.get("state", "pre"), "name": typ.get("name", ""), "clock": clock,
@@ -443,6 +445,9 @@ def tg_results(now=None):
         if k in seen_keys and not x.get("reported"):
             x["reported"], dup = "doublon", True
         seen_keys.add(k)
+    for x in shared:  # tennis annoncé sur un score à égalité (données incomplètes) : on revérifie et on corrige
+        if x.get("sport") == "tennis" and x.get("reported") in ("win", "lose") and re.match(r"(\d+)-\1\b", x.get("score") or ""):
+            x["correction"], x["reported"] = x["reported"], None
     for x in shared:
         if x.get("reported") or now < _tg_next.get(x["id"], 0) or x.get("tier") == "combo_marker":
             continue
@@ -475,16 +480,18 @@ def tg_results(now=None):
             x["reported"] = "unknown"
             continue
         sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "")
-        head = (("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
+        head = (("🔁 <b>Correction</b> : " if x.get("correction") and x["correction"] != res else "")
+                + ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
                 + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else ""))
         try:
-            if send["results"]:
+            if send["results"] and x.get("correction") != res:  # correction : on ne renvoie que si le résultat change
                 tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} {(' @ ' + engine.fr(x['odds'], 2)) if x.get('odds') else ''}"
                     + (" (bonne affaire)" if x.get("tier") == "value" else ""))
         except Exception as e:
             print("telegram :", str(e)[:100], file=sys.stderr)
             _tg_next[x["id"]] = now + 300
             continue
+        x.pop("correction", None)
         x["reported"] = res
         x["score"] = sc
         sent += 1
