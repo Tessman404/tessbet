@@ -545,6 +545,15 @@ def run_analysis(force=False, source=None, refire=False, day="today"):
 SETTINGS_PATH = os.path.join(DATA, "settings.json")
 
 
+def odds_quota():
+    if engine.load_config().get("mode") == "live":
+        try:
+            engine.refresh_quota(engine.load_env())
+        except Exception:
+            pass
+    return read_json(os.path.join(DATA, "quota.json"), None)
+
+
 def get_settings():
     s = read_json(SETTINGS_PATH, {})
     hour = s.get("hour")
@@ -555,6 +564,7 @@ def get_settings():
             "cap": get_cap_setting(), "asked": s.get("asked"),
             "outsider_stake": float(s.get("outsider_stake") or 1.0),
             "combo_stake": float(s.get("combo_stake") or 1.0),
+            "odds_quota": odds_quota(),
             "source": engine.load_config().get("claude", {}).get("source", "api"),
             "routine": bool(os.environ.get("ROUTINE_ID") and os.environ.get("ROUTINE_TOKEN"))}
 
@@ -686,7 +696,8 @@ def matches_payload():
             o["official"] = (f"{r['home']} – {r['away']}", o["label"]) in official
     leagues = len({r["league_key"] or r["league"] for r in rows})
     return {"matches": rows, "mode": cfg.get("mode"), "updated_at": dt.datetime.fromtimestamp(newest, dt.timezone.utc).isoformat() if newest else None,
-            "refresh_cost": refresh_cost(cfg) if cfg.get("mode") == "live" else 0, "leagues": leagues}
+            "refresh_cost": refresh_cost(cfg) if cfg.get("mode") == "live" else 0, "leagues": leagues,
+            "odds_quota": read_json(os.path.join(DATA, "quota.json"), None)}
 
 
 def refresh_matches(body):

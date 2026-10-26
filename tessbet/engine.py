@@ -13,6 +13,7 @@ import os
 import random
 import re
 import sys
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -1005,8 +1006,9 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
     key = env.get("ODDS_API_KEY")
     if not key:
         raise RuntimeError("Clé ODDS_API_KEY manquante dans le fichier .env")
-    sports, _ = http_json(f"{ODDS_URL}/sports/?apiKey={key}")
+    sports, sh = http_json(f"{ODDS_URL}/sports/?apiKey={key}")  # cette liste ne coûte aucun crédit
     active = {s["key"]: s["title"] for s in sports if s.get("active")}
+    quota = sh.get("x-requests-remaining", sh.get("X-Requests-Remaining"))
     caps = cfg["max_calls_per_sport"]
     keys = [k for k in cfg["leagues"]["football"] if k in active][:caps["football"]]
     keys += [k for k in cfg["leagues"]["basketball"] if k in active][:caps["basketball"]]
@@ -1016,7 +1018,7 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
     # fenêtre de 48 h (aujourd'hui + demain) pour le même prix : un appel = un crédit, quel que soit le nombre de matchs
     end = (paris_now + dt.timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
-    events, quota = [], None
+    events = []
     books = cfg.get("bookmakers") or []
     tag = _odds_tag(cfg)
     for k in keys:
@@ -1043,10 +1045,32 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
                 warnings.append(f"{k} : {str(e)[:80]}")
                 continue
         events += [convert_event(e, k, active[k]) for e in raw]
+    if quota is not None:  # on garde le dernier nombre de crédits connu pour l'afficher dans l'appli
+        try:
+            write_json(os.path.join(DATA, "quota.json"), {"remaining": int(float(quota)), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")})
+        except (TypeError, ValueError):
+            pass
     return events, quota
 
 
 # ---------------------------------------------------------------- mode démo
+def refresh_quota(env, max_age=3600):
+    """Relève les crédits de cotes restants (la liste des sports est gratuite), au plus une fois par heure."""
+    path = os.path.join(DATA, "quota.json")
+    try:
+        if time.time() - os.path.getmtime(path) < max_age:
+            return
+    except OSError:
+        pass
+    key = env.get("ODDS_API_KEY")
+    if not key:
+        return
+    _, h = http_json(f"{ODDS_URL}/sports/?apiKey={key}")
+    q = h.get("x-requests-remaining", h.get("X-Requests-Remaining"))
+    if q is not None:
+        write_json(path, {"remaining": int(float(q)), "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+
+
 def demo_events(now, day=None):
     today = day or to_paris(now).date()
     rnd = random.Random(int(hashlib.md5(today.isoformat().encode()).hexdigest()[:8], 16))

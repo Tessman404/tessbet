@@ -437,6 +437,8 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .switch input:checked + .knob { background: var(--green); border-color: var(--green); }
 .switch input:checked + .knob::after { transform: translateX(18px); background: #fff; }
 .switch input:focus-visible + .knob { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.quota { margin: 10px 0 0; font-size: .9rem; color: var(--chalk); }
+.quota b { color: var(--yellow); }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -1343,7 +1345,7 @@ function refreshBlock(d) {
   if (s.refreshing) return el('p', { class: 'mstamp', text: 'Mise à jour des cotes…' });
   if (!s.confirmRefresh) return el('button', { class: 'btn small refresh', type: 'button', text: 'Mettre à jour les cotes', onclick: () => { s.confirmRefresh = true; renderMatchList(); } });
   return el('div', { class: 'confirmbox' },
-    el('p', { text: `Cela utilise environ ${d.refresh_cost} crédits de ton quota de cotes (500 par mois). Continuer ?` }),
+    el('p', { text: `Cela utilise environ ${d.refresh_cost} crédits de ton quota de cotes (500 par mois)` + (d.odds_quota ? `, il t'en reste ${d.odds_quota.remaining}` : '') + '. Continuer ?' }),
     el('div', { class: 'btns' },
       el('button', { class: 'btn small win', type: 'button', text: 'Oui, mettre à jour', onclick: async () => {
         s.refreshing = true; s.confirmRefresh = false; renderMatchList();
@@ -1371,7 +1373,8 @@ function renderMatchList() {
       .map(([k, t]) => el('button', { class: 'pill' + (s.filter === k ? ' on' : ''), type: 'button', 'aria-pressed': String(s.filter === k), text: `${t} ${count(k)}`,
         onclick: () => { s.filter = k; renderMatchList(); } })));
   box.append(el('div', { class: 'mtools' }, pills, refreshBlock(d)));
-  box.append(el('p', { class: 'mstamp', text: d.updated_at && d.mode === 'live' ? `Cotes relevées ${ago(d.updated_at)}. Elles bougent : corrige-les dans le ticket avec celles de ton site.` : d.mode === 'live' ? 'Aucune cote en mémoire.' : '' }));
+  box.append(el('p', { class: 'mstamp', text: (d.updated_at && d.mode === 'live' ? `Cotes relevées ${ago(d.updated_at)}. Elles bougent : corrige-les dans le ticket avec celles de ton site.` : d.mode === 'live' ? 'Aucune cote en mémoire.' : '')
+    + (d.odds_quota ? ` Crédits de cotes restants : ${d.odds_quota.remaining} sur 500 ce mois-ci.` : '') }));
   const rows = all.filter(m => s.filter === 'all' || m.sport === s.filter);
   if (!rows.length) {
     box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucun match à afficher' }),
@@ -1565,7 +1568,9 @@ function renderSettings(st) {
         st.source === 'claude_task' && st.routine ? el('p', { class: 'note', text: 'Le test lance une très courte session Claude, sans recherche ni crédit de cotes.' }) : ''),
       el('div', { class: 'panel' }, el('h2', { text: 'Analyse' }),
         el('label', { class: 'autobox' }, auto, el('span', { text: 'Me proposer l\'analyse chaque matin, vers' }), hourSel),
-        el('p', { class: 'note', text: 'À l\'heure choisie, Tessbet te demande sur l\'iPhone si tu veux lancer l\'analyse : rien ne part sans ton accord. Tu peux aussi la lancer toi-même à toute heure dans Aujourd\'hui.' })),
+        el('p', { class: 'note', text: 'À l\'heure choisie, Tessbet te demande sur l\'iPhone si tu veux lancer l\'analyse : rien ne part sans ton accord. Tu peux aussi la lancer toi-même à toute heure dans Aujourd\'hui.' }),
+        st.odds_quota ? el('p', { class: 'quota' }, 'Crédits de cotes restants : ', el('b', { text: `${st.odds_quota.remaining} sur 500` }),
+          ` (relevé ${ago(st.odds_quota.at)}). Une analyse ou une mise à jour des cotes en utilise environ 17 ; le compteur repart à 500 chaque mois.`) : null),
       el('div', { class: 'panel' }, el('h2', { text: 'Notifications' }),
         el('label', { class: 'autobox' }, live, el('span', { text: 'Buts, mi-temps et résultat de mes paris' })),
         notifBtn,
