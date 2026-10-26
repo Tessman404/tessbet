@@ -432,8 +432,9 @@ def tg_results(now=None):
         return 0
     sent, cache = 0, {}
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
+    send = dict({"results": True, "bilan": True}, **(t.get("send") or {}))
     for x in shared:
-        if x.get("reported") or now < _tg_next.get(x["id"], 0):
+        if x.get("reported") or now < _tg_next.get(x["id"], 0) or x.get("tier") == "combo_marker":
             continue
         try:
             kick = dt.datetime.fromisoformat(x["kickoff"].replace("Z", "+00:00")).timestamp()
@@ -467,7 +468,8 @@ def tg_results(now=None):
         head = (("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
                 + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else ""))
         try:
-            tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} @ {engine.fr(x['odds'], 2)}"
+            if send["results"]:
+                tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} @ {engine.fr(x['odds'], 2)}"
                     + (" (bonne affaire)" if x.get("tier") == "value" else ""))
         except Exception as e:
             print("telegram :", str(e)[:100], file=sys.stderr)
@@ -476,8 +478,8 @@ def tg_results(now=None):
         x["reported"] = res
         x["score"] = sc
         sent += 1
-        day_picks = [y for y in shared if y["date"] == x["date"]]
-        if all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
+        day_picks = [y for y in shared if y["date"] == x["date"] and y.get("tier") != "combo_marker"]
+        if send["bilan"] and all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
             def count(group):
                 return sum(y["reported"] == "win" for y in group), sum(y["reported"] in ("win", "lose") for y in group)
             pronos = [y for y in day_picks if y.get("tier") not in ("moins_sur", "outsider")]

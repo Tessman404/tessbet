@@ -300,6 +300,69 @@ def select_value(cands, cfg, exclude=()):
     return picked
 
 
+def select_combo_legs(cands, cfg, exclude=()):
+    """Matchs solides (60 % et plus) à faire vérifier par Claude pour composer le combiné du jour."""
+    o = cfg.get("combo") or {}
+    if not o.get("enabled", True):
+        return []
+    ok = [c for c in cands
+          if c["event_id"] not in exclude and c.get("playable") and c.get("af_agrees") is not False and c["pick"] != "Draw"
+          and c["n_books"] >= 4 and c["prob"] >= o.get("leg_min_prob", 0.60)
+          and o.get("leg_min_odds", 1.25) <= c["odds"] <= o.get("leg_max_odds", 2.2)]
+    ok.sort(key=lambda c: (c["prob"], c["edge"]), reverse=True)
+    picked, seen = [], set()
+    for c in ok:
+        if c["event_id"] in seen:
+            continue
+        seen.add(c["event_id"])
+        c["tier"] = "combo"
+        picked.append(c)
+        if len(picked) >= o.get("review", 5):
+            break
+    return picked
+
+
+def build_combo(legs, cfg):
+    """Le meilleur combiné de 3 ou 4 matchs vérifiés, joué sur un seul site : cote totale raisonnable, chances pas trop faibles."""
+    import itertools
+    o = cfg.get("combo") or {}
+    base = lambda k: k[:-3] if k.endswith("_fr") else k
+    best = None
+    for site in o.get("sites", ["winamax", "unibet"]):
+        priced = []
+        for c in legs:
+            offer = next((x for x in c.get("offers", []) if base(x["key"]) == site), None)
+            if offer:
+                priced.append((c, offer["odds"]))
+        for n in range(o.get("legs_min", 3), o.get("legs_max", 4) + 1):
+            for combo in itertools.combinations(priced, n):
+                if len({c["event_id"] for c, _ in combo}) < n:
+                    continue
+                total = 1.0
+                prob = 1.0
+                for c, odd in combo:
+                    total *= odd
+                    prob *= c["prob"]
+                if not (o.get("min_total", 3.0) <= total <= o.get("max_total", 8.0)) or prob < o.get("min_prob", 0.15):
+                    continue
+                score = (prob * total, prob)  # rapport espéré, puis chances
+                if not best or score > best[0]:
+                    best = (score, site, combo, total, prob)
+    if not best:
+        return None
+    _, site, combo, total, prob = best
+    names = {"winamax": "Winamax", "unibet": "Unibet", "betclic": "Betclic", "pmu": "PMU", "zebet": "ZEbet",
+             "parionssport": "Parions Sport", "netbet": "NetBet", "bwin": "Bwin", "vbet": "Vbet"}
+    out_legs = []
+    for c, odd in sorted(combo, key=lambda x: x[0]["commence"]):
+        out_legs.append({"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c), "pick_team": c["pick"], "sport": c["sport"],
+                         "league": c["league"], "league_key": c.get("league_key", ""), "kickoff": c["commence"],
+                         "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"), "prob": round(c["prob"], 3),
+                         "odds": round(odd, 2), "verdict": (c.get("claude") or {}).get("verdict"), "resume": (c.get("claude") or {}).get("resume", "")})
+    return {"site": site, "site_name": names.get(site, site), "legs": out_legs, "total_odds": round(total, 2), "prob": round(prob, 3),
+            "edge": round(prob * total - 1, 3)}
+
+
 def select_outsider(cands, cfg, exclude=()):
     """« Outsider » : l'équipe donnée perdante, mais dont la cote chez un site français dépasse nettement sa vraie chance.
 
@@ -403,7 +466,8 @@ def build_review_prompt(pool, today, now_date=None):
                         if c.get("tier") == "value" else
                         " | type : OUTSIDER (équipe donnée perdante, cote haute, peu probable : ne réponds \"confirme\" que si tu trouves "
                         "une raison concrète et récente qui lui donne une vraie chance — favori qui fait tourner, absents importants chez le favori, "
-                        "fatigue, enjeu, forme — sinon réponds \"ecarte\")" if c.get("tier") == "outsider" else ""))
+                        "fatigue, enjeu, forme — sinon réponds \"ecarte\")" if c.get("tier") == "outsider" else
+                        " | type : MATCH POUR UN COMBINÉ (vérifie-le comme un pari normal)" if c.get("tier") == "combo" else ""))
     return f"""{_when(today, now_date)} Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
 Un moteur a présélectionné les paris ci-dessous d'après les cotes des bookmakers. Ton travail : vérifier sur le web
 s'il existe une raison concrète de se méfier de chacun, puis rendre un verdict.
@@ -491,12 +555,39 @@ def _review_cache_file(today):
     return os.path.join(DATA, f"review_{today.isoformat()}.json")
 
 
-def task_fetch_answer(today, env):
-    """Cherche la réponse de la tâche Claude du jour et la range dans le cache de vérification. True si trouvée."""
+def round_keys(today):
+    """Demandes à Claude pour un même jour : la première, puis 2 compléments si de nouveaux matchs apparaissent."""
+    return [today.isoformat(), f"{today.isoformat()}-r2", f"{today.isoformat()}-r3"]
+
+
+def _rounds_path(today):
+    return os.path.join(DATA, f"review_rounds_{today.isoformat()}.json")
+
+
+def rounds_done(today):
+    try:
+        with open(_rounds_path(today), encoding="utf-8") as f:
+            return set(json.load(f))
+    except (OSError, ValueError):
+        return set()
+
+
+def task_fetch_new(today, env):
+    """Récupère les réponses de Claude pas encore rangées (demande du jour et compléments). True si du nouveau."""
+    done, new = rounds_done(today), False
+    for k in round_keys(today):
+        if k not in done and task_fetch_answer(today, env, k):
+            new = True
+    return new
+
+
+def task_fetch_answer(today, env, key=None):
+    """Cherche la réponse de la tâche Claude (demande du jour ou complément) et la range dans le cache. True si trouvée."""
     token = env.get("GITHUB_TOKEN")
     if not token:
         raise RuntimeError("clé GITHUB_TOKEN manquante dans les réglages de l'application")
-    f = gh_call("GET", f"answer-{today.isoformat()}.json", token)
+    key = key or today.isoformat()
+    f = gh_call("GET", f"answer-{key}.json", token)
     if not f:
         return False
     import base64
@@ -513,24 +604,26 @@ def task_fetch_answer(today, env):
                         "sources": [u for u in (v.get("sources") or []) if isinstance(u, str) and u.startswith("https://")][:3],
                         "analyse": str(v.get("analyse", ""))[:6000]}
     write_json(path, cache)
+    write_json(_rounds_path(today), sorted(rounds_done(today) | {key}))
     return True
 
 
-def task_request(pool, today, env):
+def task_request(pool, today, env, key=None):
     """Dépose la demande d'analyse (matchs à vérifier) pour la tâche Claude, sans la répéter si elle existe déjà."""
     token = env.get("GITHUB_TOKEN")
     if not token:
         raise RuntimeError("clé GITHUB_TOKEN manquante dans les réglages de l'application")
     import base64
-    path = f"request-{today.isoformat()}.json"
+    path = f"request-{key or today.isoformat()}.json"
     if gh_call("GET", path, token):
-        return
+        return True
     items = [{"id": review_key(c), "sport": c["sport"], "league": c["league"], "home": c["home"], "away": c["away"],
               "pick": pick_label(c), "odds": round(c["odds"], 2), "prob": round(c["prob"], 3),
               "kickoff_paris": to_paris(parse_iso(c["commence"])).strftime("%H:%M")} for c in pool]
     body = {"date": today.isoformat(), "items": items}
     gh_call("PUT", path, token, {"message": f"Tessbet : demande d'analyse du {today.isoformat()}",
                                   "content": base64.b64encode(json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")).decode("ascii")})
+    return False
 
 
 def _routine_post(env, text):
@@ -557,9 +650,10 @@ def _routine_post(env, text):
             "fired_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
-def routine_launch(today, env):
-    """Réveille la tâche Claude pour l'analyse du jour (une seule fois par jour, sauf relance demandée)."""
-    path = os.path.join(DATA, f"fire_{today.isoformat()}.json")
+def routine_launch(today, env, key=None):
+    """Réveille la tâche Claude pour l'analyse du jour (une seule fois par demande, sauf relance demandée)."""
+    key = key or today.isoformat()
+    path = os.path.join(DATA, f"fire_{key}.json")
     if env.get("ROUTINE_ID") and env.get("ROUTINE_TOKEN") and os.path.exists(path) and not os.environ.get("TESSBET_REFIRE"):
         try:
             with open(path, encoding="utf-8") as f:
@@ -567,8 +661,10 @@ def routine_launch(today, env):
         except (OSError, ValueError):
             pass
     later = " Les matchs à analyser sont ceux de demain." if today > paris_date() else ""
-    res = _routine_post(env, f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {today.isoformat()}.{later} "
-                             f"Fichier à traiter : request-{today.isoformat()}.json (réponse : answer-{today.isoformat()}.json).")
+    extra = (f" C'est un complément de l'analyse du {today.isoformat()} (date réelle des matchs : {today.isoformat()}) : "
+             f"traite-le comme une demande normale, avec la date {key} pour les noms de fichiers.") if key != today.isoformat() else ""
+    res = _routine_post(env, f"Demande Tessbet lancée depuis Home Assistant. Date de la demande : {key}.{later}{extra} "
+                             f"Fichier à traiter : request-{key}.json (réponse : answer-{key}.json).")
     if res["status"] == "fired":
         write_json(path, {"fired_at": res["fired_at"], "session_url": res["session_url"]})
     return res
@@ -590,17 +686,21 @@ def claude_review(pool, cfg, env, today, warnings=None):
             cache = json.load(f)
     todo = [c for c in pool if review_key(c) not in cache]
     if todo and cl.get("source") == "claude_task":
-        if not task_fetch_answer(today, env):
-            task_request(pool, today, env)  # d'abord la demande, ensuite on réveille Claude
-            raise WaitingForClaude("en attente de l'analyse de Claude", routine_launch(today, env))
-        with open(cache_path, encoding="utf-8") as f:
-            cache = json.load(f)
+        if task_fetch_new(today, env) and os.path.exists(cache_path):
+            with open(cache_path, encoding="utf-8") as f:
+                cache = json.load(f)
         todo = [c for c in pool if review_key(c) not in cache]
-        if todo:  # les cotes ont bougé depuis la demande : Claude n'a pas vu ces paris, donc on ne les propose pas
+        done = rounds_done(today)
+        for k in round_keys(today):  # demande du jour, puis compléments pour les matchs apparus ensuite
+            if not todo or k in done:
+                continue
+            task_request(pool if k == today.isoformat() else todo, today, env, k)  # d'abord la demande, ensuite on réveille Claude
+            raise WaitingForClaude("en attente de l'analyse de Claude", routine_launch(today, env, k))
+        if todo:  # plus de complément possible aujourd'hui : Claude n'a pas vu ces paris, donc on ne les propose pas
             if warnings is not None:
                 warnings.append(f"{len(todo)} pari{'s' if len(todo) > 1 else ''} apparu{'s' if len(todo) > 1 else ''} après la réponse de Claude : "
                                 "non vérifié, donc écarté.")
-            return cache
+            return {k: v for k, v in cache.items() if k in {review_key(c) for c in pool}}
     if todo:
         key = env.get("ANTHROPIC_API_KEY")
         if not key:
@@ -716,7 +816,8 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
     reliable = select(cands, cfg, limit=cl.get("max_review", 6))
     value = select_value(cands, cfg, exclude={c["event_id"] for c in reliable})
     outsiders = select_outsider(cands, cfg, exclude={c["event_id"] for c in reliable + value})
-    pool = reliable + value + outsiders
+    combo_legs = select_combo_legs(cands, cfg, exclude={c["event_id"] for c in reliable + value + outsiders})
+    pool = reliable + value + outsiders + combo_legs
     info = {"reviewed": len(pool), "dropped": 0, "unavailable": False, "dropped_items": []}
     if not pool:
         return [], info
@@ -744,8 +845,13 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
             return [], info
         return reliable[:cfg["selection"]["max_picks"]], info  # jamais de « bonne affaire » sans Claude
     final = []
+    info["combo_legs"] = []
     for c in pool:
         v = verdicts.get(review_key(c))
+        if v and v["verdict"] == "confirme" and c.get("tier") in (None, "fiable", "combo") and c["pick"] != "Draw":
+            info["combo_legs"].append(dict(c, claude=v))  # matchs confirmés par Claude : briques du combiné du jour
+        if c.get("tier") == "combo":
+            continue  # ces matchs ne servent qu'au combiné
         if c.get("tier") in ("value", "outsider") and (not v or v["verdict"] != "confirme"):
             if v:  # bonne affaire et outsider ne sont gardés que si Claude les confirme franchement
                 info["dropped"] += 1
@@ -1122,7 +1228,15 @@ def run(mode=None, offset=None):
         msg = (msg.replace("Aucun pari assez solide aujourd'hui.", "Aucun pari fiable aujourd'hui.").replace(" Ne pas parier est aussi une bonne décision.", "")
                + " En plus : " + " et ".join(extra) + ".")
 
+    combo = None
+    if (cfg.get("combo") or {}).get("enabled", True):
+        legs = [c for c in info.get("combo_legs", [])
+                if (cfg["combo"].get("leg_min_odds", 1.25) <= c["odds"] <= cfg["combo"].get("leg_max_odds", 2.2))
+                and c["prob"] >= cfg["combo"].get("leg_min_prob", 0.60)]
+        combo = build_combo(legs, cfg)
+
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
+              "combo": combo,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
               "claude_dropped_items": info.get("dropped_items", []), "near": near_misses(cands, cfg),
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),

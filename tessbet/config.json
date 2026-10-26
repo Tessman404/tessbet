@@ -47,6 +47,20 @@
     "max_dispersion": 0.03
   },
 
+  "combo": {
+    "enabled": true,
+    "review": 5,
+    "legs_min": 3,
+    "legs_max": 4,
+    "leg_min_prob": 0.60,
+    "leg_min_odds": 1.25,
+    "leg_max_odds": 2.20,
+    "min_total": 3.0,
+    "max_total": 8.0,
+    "min_prob": 0.15,
+    "sites": ["winamax", "unibet"]
+  },
+
   "outsider": {
     "enabled": true,
     "max": 2,

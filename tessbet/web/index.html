@@ -411,6 +411,32 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 .why-extra .why { margin-top: 0; }
 .winteam { display: inline-block; padding: 0 7px; border-radius: 6px; background: rgba(255,255,255,.88); color: #157a45; font-weight: 800; }
 .more-bets { display: block; margin: 4px auto 8px; }
+.combocard { margin: 0 0 18px; padding: 16px; border-radius: 16px; background: var(--ticket); color: var(--ink); box-shadow: 0 0 0 2px var(--yellow), 0 10px 24px rgba(0,0,0,.28); }
+.cbhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.cbhead h3 { margin: 0; font: 700 1.3rem/1.15 var(--display); }
+.cbsub { margin: 3px 0 0; font-size: .86rem; color: var(--ink-2); }
+.cbodds { text-align: right; padding: 6px 12px; border-radius: 10px; background: var(--yellow); }
+.cbodds small { display: block; font-size: .74rem; color: rgba(16,32,26,.75); }
+.cbodds b { font: 700 1.7rem/1 var(--display); }
+.cblegs { margin: 12px 0 0; padding: 0; list-style: none; }
+.cblegs li { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid #d5e0da; font-size: .92rem; }
+.cbtime { color: var(--ink-2); font-size: .85rem; }
+.cbodd { font: 700 1rem var(--display); }
+.combocard .winteam { background: #dff3e7; }
+.cbfoot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: .92rem; }
+.cbfoot b { color: #157a45; }
+.cbwarn { margin: 10px 0 0; font-size: .8rem; color: var(--ink-2); }
+.smallstake { margin: 6px 0; }
+.smallstake .sl { min-width: 170px; color: #fff; font-size: .92rem; }
+.tgsend { margin: 10px 0; }
+.tgsend .sl { margin: 0 0 6px; color: var(--chalk); font-size: .9rem; font-weight: 600; }
+.switch { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; color: #fff; font-size: .92rem; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch .knob { position: relative; flex: none; width: 42px; height: 24px; border-radius: 999px; background: var(--turf-3); border: 1px solid var(--chalk-dim); transition: background .15s; }
+.switch .knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--chalk); transition: transform .15s; }
+.switch input:checked + .knob { background: var(--green); border-color: var(--green); }
+.switch input:checked + .knob::after { transform: translateX(18px); background: #fff; }
+.switch input:focus-visible + .knob { outline: 3px solid var(--yellow); outline-offset: 2px; }
 .sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 /* ---- combiné dans Mes mises et En direct ---- */
 .legs { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--turf-3); }
@@ -817,6 +843,31 @@ function whyBox(d, title = 'Pourquoi aucun pari ?') {
       + (near.length ? 'Voici aussi les matchs les plus proches des critères, sur ' + plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés') + '.' : '') }));
 }
 
+/* Le combiné du jour : 3 ou 4 matchs vérifiés par Claude, sur un seul site, petite mise. */
+function comboCard(cb) {
+  const stake = (state.settings && state.settings.combo_stake) || 1;
+  const gain = stake * (cb.total_odds - 1);
+  const toSlip = () => {
+    const s = state.slip;
+    s.legs = cb.legs.map((l, i) => ({ key: 'cb' + i + l.match, match: l.match, pick: l.pick_label, pick_team: l.pick_team, odds: l.odds, best: l.odds,
+      sport: l.sport, league_key: l.league_key, kickoff: l.kickoff, time: l.kickoff_local }));
+    s.mode = 'combo'; s.book = cb.site; s.stake = String(stake).replace('.', ','); s.total = cb.total_odds;
+    showTab('bet'); toast('Combiné mis dans ton ticket : vérifie les cotes sur ' + cb.site_name + ', puis « J\'ai parié ».');
+  };
+  return el('article', { class: 'combocard' },
+    el('div', { class: 'cbhead' },
+      el('div', {}, el('h3', { text: '🎟️ Combiné du jour' }), el('p', { class: 'cbsub', text: `${plural(cb.legs.length, 'match', 'matchs')} confirmés par Claude · sur ${cb.site_name}` })),
+      el('div', { class: 'cbodds' }, el('small', { text: 'Cote totale' }), el('b', { text: odds(cb.total_odds) }))),
+    el('ul', { class: 'cblegs' }, cb.legs.map(l => el('li', {},
+      el('span', { class: 'cbtime', text: `${ball(l)}${l.kickoff_local}` }),
+      el('span', { class: 'cbmatch' }, matchTeams(l.match, l.pick_label, l.pick_team)),
+      el('span', { class: 'cbodd', text: odds(l.odds) })))),
+    el('div', { class: 'cbfoot' },
+      el('span', {}, `Environ ${pct(cb.prob)} de chances · mise ${eur(stake)} → gain possible `, el('b', { text: '+' + eur(gain) })),
+      el('button', { class: 'btn small', type: 'button', text: 'Mettre dans mon ticket', onclick: toSlip })),
+    el('p', { class: 'cbwarn', text: 'Un combiné est perdu dès qu\'un seul match est perdu, et il additionne la marge des sites : sur la durée, il coûte plus qu\'il ne rapporte. Petite mise uniquement, pour le plaisir.' }));
+}
+
 /* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
 function daySection(i, multi) {
   const d = i.d, today = i.day === 'today', word = today ? 'aujourd\'hui' : 'demain';
@@ -840,6 +891,7 @@ function daySection(i, multi) {
     d.selections.forEach(s => box.append(ticket(s)));
   }
   sec.append(box);
+  if (i.kind === 'done' && d.combo) sec.append(comboCard(d.combo));
   if (i.kind === 'done' && i.picks) {  // même avec des paris retenus : les moins sûrs restent consultables
     const w = whyBox(d, '🤔 Matchs moins sûrs (pas retenus)');
     if (w) sec.append(el('div', { class: 'empty why-extra' }, w));
@@ -1529,14 +1581,18 @@ function renderSettings(st) {
 }
 
 function outsiderPanel(st) {
-  const inp = el('input', { type: 'text', inputmode: 'decimal', value: String(st.outsider_stake || 1).replace('.', ','), 'aria-label': 'Mise par outsider en euros' });
-  return el('div', { class: 'panel' }, el('h2', { text: '🎲 Mise par outsider' }),
-    el('div', { class: 'settings' }, inp, '€',
+  const row = (label, key, val) => {
+    const inp = el('input', { type: 'text', inputmode: 'decimal', value: String(val || 1).replace('.', ','), 'aria-label': label });
+    return el('div', { class: 'settings smallstake' }, el('span', { class: 'sl', text: label }), inp, '€',
       el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
-        try { await api('settings', 'POST', { outsider_stake: num(inp.value) }); await loadSettings(); toast('Mise par outsider : ' + eur(num(inp.value)) + '.'); }
+        try { await api('settings', 'POST', { [key]: num(inp.value) }); await loadSettings(); toast(label + ' : ' + eur(num(inp.value)) + '.'); }
         catch (e) { toast(e.message, true); }
-      } })),
-    el('p', { class: 'note', text: 'Toujours la même petite mise : c\'est ce qui permet de tenir les séries de défaites, normales avec des outsiders.' }));
+      } }));
+  };
+  return el('div', { class: 'panel' }, el('h2', { text: 'Petites mises fixes' }),
+    row('🎲 Par outsider', 'outsider_stake', st.outsider_stake),
+    row('🎟️ Par combiné du jour', 'combo_stake', st.combo_stake),
+    el('p', { class: 'note', text: 'Toujours la même petite mise : c\'est ce qui permet de tenir les séries de défaites, normales avec des outsiders et des combinés.' }));
 }
 
 function tgPanel() {
@@ -1573,7 +1629,17 @@ function tgPanel() {
         el('span', { class: 'bn', text: { win: '✅', lose: '❌' }[x.reported] || (x.reported ? '❔' : '⏳') }),
         el('span', { class: 'bd', text: `${x.match} – ${x.pick}` + (x.tier === 'moins_sur' ? ' (moins sûr)' : x.tier === 'outsider' ? ' (outsider)' : '') }),
         el('span', { class: 'bd', text: x.reported ? 'envoyé' : 'à la fin du match' }))))) : null;
-    body.append(el('div', { class: 'btns' }, find, test), list, follow,
+    const labels = [['pronos', 'Pronos fiables'], ['value', '💡 Bonnes affaires'], ['outsider', '🎲 Outsiders'], ['near', '🤔 Matchs moins sûrs'],
+      ['combo', '🎟️ Combiné du jour'], ['results', '✅ Résultats à la fin des matchs'], ['bilan', '📊 Bilan de la journée']];
+    const toggles = el('div', { class: 'tgsend' }, el('p', { class: 'sl', text: 'Ce qui part sur Telegram :' }), labels.map(([k, t]) => {
+      const cb = el('input', { type: 'checkbox', role: 'switch' }); cb.checked = !!(st.send || {})[k];
+      cb.addEventListener('change', async () => {
+        try { await api('telegram/send', 'POST', { [k]: cb.checked }); toast(t + (cb.checked ? ' : envoyé sur Telegram.' : ' : plus envoyé.')); }
+        catch (e) { cb.checked = !cb.checked; toast(e.message, true); }
+      });
+      return el('label', { class: 'switch' }, cb, el('span', { class: 'knob', 'aria-hidden': 'true' }), el('span', { text: t }));
+    }));
+    body.append(el('div', { class: 'btns' }, find, test), list, toggles, follow,
       el('p', { class: 'note', text: 'Le bouton « Envoyer les pronos sur Telegram » apparaît dans Aujourd\'hui dès que l\'analyse est faite.' }));
   };
   draw();

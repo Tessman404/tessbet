@@ -554,6 +554,7 @@ def get_settings():
             "horizon": 48 if s.get("horizon") == 48 else 24,  # 24 h = aujourd'hui, 48 h = aujourd'hui + demain
             "cap": get_cap_setting(), "asked": s.get("asked"),
             "outsider_stake": float(s.get("outsider_stake") or 1.0),
+            "combo_stake": float(s.get("combo_stake") or 1.0),
             "source": engine.load_config().get("claude", {}).get("source", "api"),
             "routine": bool(os.environ.get("ROUTINE_ID") and os.environ.get("ROUTINE_TOKEN"))}
 
@@ -576,6 +577,14 @@ def set_settings(body):
         if not 5 <= h <= 14:
             return 400, {"error": "Choisis une heure entre 5 h et 14 h."}
         s["hour"] = h
+    if "combo_stake" in body:
+        try:
+            v = round(float(str(body["combo_stake"]).replace(",", ".")), 2)
+        except (TypeError, ValueError):
+            return 400, {"error": "Mise invalide."}
+        if not 0.1 <= v <= 50:
+            return 400, {"error": "Choisis une mise entre 0,10 € et 50 €."}
+        s["combo_stake"] = v
     if "outsider_stake" in body:
         try:
             v = round(float(str(body["outsider_stake"]).replace(",", ".")), 2)
@@ -718,9 +727,29 @@ def tg_call(method, payload):
         raise RuntimeError(f"Telegram a refusé ({e.code}{' : ' + desc if desc else ''})")
 
 
+TG_SEND_DEFAULT = {"pronos": True, "value": True, "outsider": True, "near": True, "combo": False, "results": True, "bilan": True}
+
+
+def tg_send_opts(t=None):
+    t = read_json(TG_PATH, {}) if t is None else t
+    return dict(TG_SEND_DEFAULT, **{k: bool(v) for k, v in (t.get("send") or {}).items() if k in TG_SEND_DEFAULT})
+
+
+def tg_set_send(body):
+    with LOCK:
+        t = read_json(TG_PATH, {})
+        send = tg_send_opts(t)
+        for k, v in body.items():
+            if k in TG_SEND_DEFAULT:
+                send[k] = bool(v)
+        t["send"] = send
+        engine.write_json(TG_PATH, t)
+    return 200, tg_status()
+
+
 def tg_status():
     t = read_json(TG_PATH, {})
-    return {"configured": bool(engine.load_env().get("TELEGRAM_TOKEN")), "chat": t.get("chat"),
+    return {"configured": bool(engine.load_env().get("TELEGRAM_TOKEN")), "chat": t.get("chat"), "send": tg_send_opts(t),
             "shared": [{k: x.get(k) for k in ("date", "match", "pick", "tier", "kickoff", "reported", "score")}
                        for x in t.get("shared", []) if x.get("date", "") >= (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=1)).isoformat()]}
 
@@ -761,6 +790,15 @@ def _tg_match(match, label, team=None):
     return " – ".join(f"🟢 <b>{_h(p)}</b>" if engine.team_match(p, team) else _h(p) for p in parts)
 
 
+def tg_filter(d, send):
+    """Ne garde que les types de matchs cochés dans Réglages > Telegram."""
+    def keep(s):
+        tier = s.get("tier", "fiable")
+        return send["value"] if tier == "value" else send["outsider"] if tier == "outsider" else send["pronos"]
+    return dict(d, selections=[s for s in d.get("selections", []) if keep(s)], near=(d.get("near") or []) if send["near"] else [],
+                combo=d.get("combo") if send["combo"] else None)
+
+
 def share_text(days, update=False):
     """Le message des pronos, prêt pour Telegram (paris retenus, bonne affaire, et les moins sûrs à titre indicatif)."""
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾"}
@@ -781,6 +819,12 @@ def share_text(days, update=False):
             out.append(f"\n{head}{ball.get(s['sport'], '')} {_h(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
                        f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
                        + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
+        cb = d.get("combo")
+        if cb:
+            out.append(f"\n🎟️ <b>Combiné du jour</b> ({_h(cb['site_name'])}) – cote totale <b>{engine.fr(cb['total_odds'], 2)}</b>, "
+                       f"environ {round(cb['prob'] * 100)} % de chances, petite mise :")
+            for lg in cb["legs"]:
+                out.append(f"• {ball.get(lg['sport'], '')} {_h(lg['kickoff_local'])} {_tg_match(lg['match'], lg['pick_label'], lg.get('pick_team'))} @ {engine.fr(lg['odds'], 2)}")
         near = d.get("near") or []
         if near:
             out.append("\n🤔 <i>Moins sûrs (pas retenus, à vos risques) :</i>")
@@ -798,10 +842,11 @@ def tg_share(body):
     if not st["chat"]:
         return 400, {"error": "Choisis d'abord le groupe Telegram dans Réglages."}
     days = []
+    send = tg_send_opts()
     for day in (("today", "tomorrow") if get_settings()["horizon"] == 48 else ("today",)):
         d = read_result(day_date(day))
         if d and not d.get("waiting"):
-            days.append(d)
+            days.append(tg_filter(d, send))
     if body.get("test"):
         text = "✅ Tessbet est bien relié à ce groupe. Les pronos arriveront ici."
     elif not days:
@@ -814,8 +859,9 @@ def tg_share(body):
         for d in days:
             sel = [s for s in d.get("selections", []) if (d["date"], s["match"], s["pick_label"], False) not in done]
             near = [n for n in d.get("near") or [] if (d["date"], n["match"], n["pick_label"], True) not in done]
-            if sel or near:
-                fresh.append(dict(d, selections=sel, near=near))
+            cb = d.get("combo") if d.get("combo") and (d["date"], "combo:" + "+".join(l["match"] for l in d["combo"]["legs"]), "", False) not in done else None
+            if sel or near or cb:
+                fresh.append(dict(d, selections=sel, near=near, combo=cb))
         already = any(x["date"] in {d["date"] for d in days} for x in t0.get("shared", []))
         if body.get("all") or not already:
             text = share_text(days)
@@ -842,6 +888,10 @@ def tg_share(body):
                     shared[nid] = {"id": nid, "date": d["date"], "match": n["match"], "pick": n["pick_label"],
                                    "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
                                    "kickoff": n.get("kickoff"), "odds": n["odds"], "tier": "moins_sur", "reported": None}
+            if d.get("combo"):  # repère pour ne pas renvoyer le même combiné (pas de suivi de résultat pour l'instant)
+                cm = "combo:" + "+".join(l["match"] for l in d["combo"]["legs"])
+                cid = "c" + hashlib.md5((d["date"] + cm).encode()).hexdigest()[:9]
+                shared.setdefault(cid, {"id": cid, "date": d["date"], "match": cm, "pick": "", "tier": "combo_marker", "reported": "skip"})
         cutoff = (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=7)).isoformat()
         t["shared"] = [x for x in shared.values() if x["date"] >= cutoff]
         engine.write_json(TG_PATH, t)
@@ -888,7 +938,7 @@ def scheduler():
                 d = read_result(date)
                 if d and d.get("waiting") and time.time() - last_wait.get(date, 0) > 180:
                     last_wait[date] = time.time()  # mode « tâche Claude » : on regarde si la réponse est arrivée
-                    if engine.task_fetch_answer(dt.date.fromisoformat(date), engine.load_env()):
+                    if engine.task_fetch_new(dt.date.fromisoformat(date), engine.load_env()):
                         run_analysis(force=True, day=day)
                     d = read_result(date)
                 if (d and not d.get("waiting") and cfg.get("mode") == "live" and tries.get(date, 0) < 6
@@ -985,6 +1035,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(500 if st.startswith("notification impossible") else 200, {"status": st} if not st.startswith("notification impossible") else {"error": st})
             if path == "/api/telegram/find":
                 return self._send(*tg_find())
+            if path == "/api/telegram/send":
+                return self._send(*tg_set_send(body))
             if path == "/api/telegram/chat":
                 return self._send(*tg_set_chat(body))
             if path == "/api/telegram/share":
