@@ -809,7 +809,7 @@ def tg_filter(d, send):
         tier = s.get("tier", "fiable")
         return send["value"] if tier == "value" else send["outsider"] if tier == "outsider" else send["pronos"]
     return dict(d, selections=[s for s in d.get("selections", []) if keep(s)], near=(d.get("near") or []) if send["near"] else [],
-                claude_dropped_items=(d.get("claude_dropped_items") or []) if send["near"] else [],
+                claude_dropped_items=[],  # les matchs écartés ou pas vérifiés par Claude ne partent jamais sur Telegram
                 combo=d.get("combo") if send["combo"] else None)
 
 

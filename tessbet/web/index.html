@@ -840,20 +840,15 @@ function matchTeams(match, label, team) {
 
 function whyBox(d, title = 'Pourquoi aucun pari ?') {
   const near = d.near || [], all = d.claude_dropped_items || [];
-  const dropped = all.filter(x => !x.unverified), waitingCheck = all.filter(x => x.unverified);
-  if (!near.length && !all.length) return null;
+  const waitingCheck = all.filter(x => x.unverified);  // les matchs écartés par Claude ne sont plus montrés
+  if (!near.length && !waitingCheck.length) return null;
   const cat = x => / \(bonne affaire\)$/.test(x.pick_label) ? 'value' : / \(outsider\)$/.test(x.pick_label) ? 'outsider' : 'prono';
-  const dropLi = x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), x.pick_team),
-    x.odds ? ` – cote ${odds(x.odds)}` + (x.kickoff_local ? `, ${nightTxt(x.kickoff_local)}` : '') : '', el('small', { text: 'Écarté par Claude : ' + x.resume }));
   const tierTxt = x => cat(x) === 'value' ? ' (bonne affaire)' : cat(x) === 'outsider' ? ' (outsider)' : '';
   const waitLi = x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label.replace(/ \((bonne affaire|outsider)\)$/, ''), x.pick_team),
     x.odds ? ` – cote ${odds(x.odds)}` + (x.kickoff_local ? `, ${nightTxt(x.kickoff_local)}` : '') : '', tierTxt(x),
     el('small', { text: 'Passe le tri, mais Claude ne l\'a pas encore vérifié.' }));
   const groups = [
     ['⏳ En attente de vérification', 'Ni bons ni mauvais : Claude ne les a pas encore contrôlés, donc ils ne sont pas proposés.', waitingCheck.map(waitLi)],
-    ['💡 Bonnes affaires écartées', 'Cote au-dessus de leur vraie valeur, mais Claude n\'a pas confirmé.', dropped.filter(x => cat(x) === 'value').map(dropLi)],
-    ['🎲 Outsiders écartés', 'Claude n\'a pas trouvé de vraie raison d\'y croire.', dropped.filter(x => cat(x) === 'outsider').map(dropLi)],
-    ['❌ Pronos écartés par Claude', 'Ils passaient le tri, mais Claude a trouvé un problème.', dropped.filter(x => cat(x) === 'prono').map(dropLi)],
     ['🤔 Trop justes', `Les plus proches des critères, sur ${plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés')}.`,
       near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}`,
         el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))]];
@@ -917,7 +912,7 @@ function daySection(i, multi) {
   if (i.kind === 'done' && d.combo) sec.append(comboCard(d.combo));
   else if (i.kind === 'done' && d.combo_note) sec.append(el('p', { class: 'note combonote', text: '🎟️ ' + d.combo_note }));
   if (i.kind === 'done' && i.picks) {  // même avec des paris retenus : les moins sûrs restent consultables
-    const w = whyBox(d, 'Les autres matchs : écartés et trop justes');
+    const w = whyBox(d, 'Les autres matchs : trop justes ou à vérifier');
     if (w) sec.append(el('div', { class: 'empty why-extra' }, w));
   }
   return sec;
