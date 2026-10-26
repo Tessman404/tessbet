@@ -437,6 +437,12 @@ def tg_results(now=None):
     sent, cache = 0, {}
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒"}
     send = dict({"results": True, "bilan": True}, **(t.get("send") or {}))
+    seen_keys, dup = set(), False
+    for x in shared:  # anciens doublons (même match envoyé deux fois) : un seul résultat
+        k = (x.get("date"), x.get("match"), x.get("pick"))
+        if k in seen_keys and not x.get("reported"):
+            x["reported"], dup = "doublon", True
+        seen_keys.add(k)
     for x in shared:
         if x.get("reported") or now < _tg_next.get(x["id"], 0) or x.get("tier") == "combo_marker":
             continue
@@ -482,7 +488,7 @@ def tg_results(now=None):
         x["reported"] = res
         x["score"] = sc
         sent += 1
-        day_picks = [y for y in shared if y["date"] == x["date"] and y.get("tier") != "combo_marker"]
+        day_picks = [y for y in shared if y["date"] == x["date"] and y.get("tier") != "combo_marker" and y.get("reported") != "doublon"]
         if send["bilan"] and all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
             def count(group):
                 return sum(y["reported"] == "win" for y in group), sum(y["reported"] in ("win", "lose") for y in group)
@@ -504,7 +510,7 @@ def tg_results(now=None):
                 t["bilans"] = t["bilans"][-14:]
             except Exception:
                 pass
-    if sent or any(x.get("reported") == "unknown" for x in shared):
+    if sent or dup or any(x.get("reported") == "unknown" for x in shared):
         engine.write_json(_path("telegram.json"), t)
     return sent
 
