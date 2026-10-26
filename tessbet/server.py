@@ -1023,9 +1023,13 @@ class Handler(BaseHTTPRequestHandler):
                     out["requests"] = r.get("requests")
                     out["status_errors"] = st.get("errors")
                     season = dt.date.today().year if dt.date.today().month >= 7 else dt.date.today().year - 1
-                    fx, _ = engine.http_json(f"{engine.AF_URL}/fixtures?date={today_paris()}&league=61&season={season}", {"x-apisports-key": key})
-                    out["fixtures_errors"] = fx.get("errors")
-                    out["fixtures_count"] = len(fx.get("response") or [])
+                    probes = {"saison_en_cours": f"/fixtures?date={today_paris()}&league=61&season={season}",
+                              "jour_sans_saison": f"/fixtures?date={today_paris()}", "en_direct": "/fixtures?live=all",
+                              "blesses_du_jour": f"/injuries?date={today_paris()}", "saison_2024": "/fixtures?league=61&season=2024&last=1"}
+                    out["tests"] = {}
+                    for name, path in probes.items():
+                        fx, _ = engine.http_json(f"{engine.AF_URL}{path}", {"x-apisports-key": key})
+                        out["tests"][name] = {"erreur": fx.get("errors") or None, "resultats": len(fx.get("response") or [])}
                 except Exception as e:
                     out["error"] = str(e)[:200]
                 return self._send(200, out)
