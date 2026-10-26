@@ -248,6 +248,8 @@ def explain(c):
     if c.get("tier") == "value":
         r.insert(0, f"Bonne affaire : moins sûr qu'un pari fiable ({round(c['prob'] * 100)} % de chances), mais la cote "
                     f"{fr(c['odds'], 2)} est au-dessus de sa vraie valeur ({fr(1 / c['prob'], 2)}). Mise conseillée réduite.")
+    if c.get("injuries"):
+        r.append("Absents connus (API-Football) : " + "; ".join(c["injuries"][:6]) + ".")
     if not c["playable"]:
         r.append("À vérifier : aucun bookmaker français trouvé dans les données reçues.")
     return r
@@ -468,7 +470,8 @@ def build_review_prompt(pool, today, now_date=None):
                         " | type : OUTSIDER (équipe donnée perdante, cote haute, peu probable : ne réponds \"confirme\" que si tu trouves "
                         "une raison concrète et récente qui lui donne une vraie chance — favori qui fait tourner, absents importants chez le favori, "
                         "fatigue, enjeu, forme — sinon réponds \"ecarte\")" if c.get("tier") == "outsider" else
-                        " | type : MATCH POUR UN COMBINÉ (vérifie-le comme un pari normal)" if c.get("tier") == "combo" else ""))
+                        " | type : MATCH POUR UN COMBINÉ (vérifie-le comme un pari normal)" if c.get("tier") == "combo" else "")
+                     + (f" | absents connus (API-Football) : {'; '.join(c['injuries'])}" if c.get("injuries") else ""))
     return f"""{_when(today, now_date)} Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
 Un moteur a présélectionné les paris ci-dessous d'après les cotes des bookmakers. Ton travail : vérifier sur le web
 s'il existe une raison concrète de se méfier de chacun, puis rendre un verdict.
@@ -621,7 +624,11 @@ def task_request(pool, today, env, key=None):
         return True
     items = [{"id": review_key(c), "sport": c["sport"], "league": c["league"], "home": c["home"], "away": c["away"],
               "pick": pick_label(c), "odds": round(c["odds"], 2), "prob": round(c["prob"], 3),
-              "kickoff_paris": to_paris(parse_iso(c["commence"])).strftime("%H:%M")} for c in pool]
+              "kickoff_paris": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
+              **({"type": {"value": "bonne affaire (ne confirme que si rien ne s'y oppose)",
+                           "outsider": "outsider (ne confirme que si une raison concrète lui donne une vraie chance, sinon écarte)",
+                           "combo": "match pour un combiné (à vérifier comme un pari normal)"}[c["tier"]]} if c.get("tier") in ("value", "outsider", "combo") else {}),
+              **({"absents_connus": c["injuries"]} if c.get("injuries") else {})} for c in pool]
     body = {"date": today.isoformat(), "items": items}
     gh_call("PUT", path, token, {"message": f"Tessbet : demande d'analyse du {today.isoformat()}",
                                   "content": base64.b64encode(json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")).decode("ascii")})
@@ -888,29 +895,58 @@ def af_get(path, params, key):
     return data.get("response", [])
 
 
+def _af_day(path, today, key, max_age=7200):
+    """Une liste API-Football du jour (matchs ou blessés), gardée 2 h en mémoire pour économiser les 100 requêtes."""
+    cache = os.path.join(DATA, f"af_{path.strip('/')}_{today.isoformat()}.json")
+    try:
+        if time.time() - os.path.getmtime(cache) < max_age:
+            with open(cache, encoding="utf-8") as f:
+                return json.load(f)
+    except (OSError, ValueError):
+        pass
+    data = af_get(path, {"date": today.isoformat()}, key)  # sans « season » : accessible avec l'offre gratuite
+    write_json(cache, data)
+    return data
+
+
 def enrich_football(cands, cfg, env, today, warnings):
+    """API-Football (offre gratuite) : absents connus du jour et, si l'offre le permet, la prédiction de forme."""
     key = env.get("API_FOOTBALL_KEY")
     af = cfg.get("api_football", {})
     if not key or not af.get("enabled"):
         return
-    season = today.year if today.month >= 7 else today.year - 1
-    cache, calls = {}, 0
-    for c in cands:
-        lid = AF_LEAGUES.get(c["league_key"])
-        if c["sport"] != "football" or not lid:
+    foot = [c for c in cands if c["sport"] == "football"]
+    if not foot:
+        return
+    try:
+        fixtures = _af_day("/fixtures", today, key)
+    except Exception as e:
+        warnings.append(f"API-Football indisponible ({str(e)[:60]})")
+        return
+    try:
+        injuries = _af_day("/injuries", today, key)
+    except Exception:
+        injuries = []
+    by_fixture = {}
+    for inj in injuries:
+        fid = (inj.get("fixture") or {}).get("id")
+        p, t = inj.get("player") or {}, inj.get("team") or {}
+        if fid and p.get("name"):
+            by_fixture.setdefault(fid, []).append({"player": p["name"], "team": t.get("name", ""), "reason": p.get("reason") or p.get("type") or ""})
+    calls, predictions_ok = 0, True
+    for c in foot:
+        fx = next((f for f in fixtures
+                   if team_match(f["teams"]["home"]["name"], c["home"]) and team_match(f["teams"]["away"]["name"], c["away"])), None)
+        if not fx:
+            continue
+        fid = fx["fixture"]["id"]
+        inj = by_fixture.get(fid, [])
+        if inj:
+            c["injuries"] = [f"{i['player']} ({i['team']}{', ' + i['reason'] if i['reason'] else ''})" for i in inj[:10]]
+        if not predictions_ok or calls >= af.get("max_calls", 25):
             continue
         try:
-            if lid not in cache:
-                if calls >= af["max_calls"]:
-                    break
-                cache[lid] = af_get("/fixtures", {"date": today.isoformat(), "league": lid, "season": season}, key)
-                calls += 1
-            fx = next((f for f in cache[lid]
-                       if team_match(f["teams"]["home"]["name"], c["home"])
-                       and team_match(f["teams"]["away"]["name"], c["away"])), None)
-            if not fx or calls >= af["max_calls"]:
-                continue
-            pred = af_get("/predictions", {"fixture": fx["fixture"]["id"]}, key)
+            pred = af_get("/predictions", {"fixture": fid}, key)
             calls += 1
             pct = pred[0]["predictions"]["percent"]
             m = {k: int(str(v).strip("%")) / 100 for k, v in pct.items()}
@@ -920,8 +956,9 @@ def enrich_football(cands, cfg, env, today, warnings):
             w = af.get("blend_weight", 0.2)
             c["prob"] = (1 - w) * c["prob"] + w * m[side]
         except Exception as e:  # la forme est un bonus : on n'arrête jamais l'analyse pour ça
-            if "Free plans" in str(e) or "access to this season" in str(e):
-                return  # offre gratuite sans la saison en cours : inutile d'insister ni d'alerter à chaque match
+            if "plan" in str(e).lower() or "Free" in str(e):
+                predictions_ok = False  # offre gratuite : pas de prédiction, on garde les blessés
+                continue
             warnings.append(f"Forme indisponible pour {c['home']} - {c['away']} ({str(e)[:60]})")
 
 
@@ -1225,7 +1262,7 @@ def run(mode=None, offset=None):
     shortlist = sorted(cands, key=lambda c: c["prob"], reverse=True)[:12]
     shortlist = [c for c in shortlist if c["prob"] >= cfg["selection"]["min_prob"] - 0.05]
     if mode != "demo":
-        enrich_football(shortlist, cfg, env, today, warnings)  # modifie les candidats en place
+        enrich_football(shortlist + [c for c in cands if c not in shortlist], cfg, env, today, warnings)  # absents connus pour tous les matchs de foot
         cands = [finalize(c) for c in cands]
     picks, info = review_and_pick(cands, cfg, env, today, mode, warnings)
 
