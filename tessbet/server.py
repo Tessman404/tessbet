@@ -837,10 +837,10 @@ def share_text(days, update=False):
         def drop_line(x):
             base = re.sub(r" \((bonne affaire|outsider)\)$", "", x["pick_label"])
             cote = f" @ {engine.fr(x['odds'], 2)}" if x.get("odds") else ""
+            head = f"{ball.get(x.get('sport'), '')} {_h(x['match'])}\nPari testé : {_h(base)}{cote}"
             if x.get("unverified"):
-                return f"⏳ {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote}\n   <i>pas encore vérifié par Claude</i>"
-            return (f"❌ {ball.get(x.get('sport'), '')} {_tg_match(x['match'], base, x.get('pick_team'))}{cote}\n"
-                    f"   <i>écarté par Claude : {_h(x.get('resume', ''))[:160]}</i>")
+                return f"⏳ <b>Pas encore vérifié</b> · {head}"
+            return f"⛔ <b>À éviter</b> · {head}\n<i>Claude : {_h(x.get('resume', ''))[:200]}</i>"
 
         sections = [("fiable", "🎯 <b><u>Pronos de confiance</u></b>", "les plus sûrs, vérifiés par Claude"),
                     ("value", "💡 <b><u>Bonne affaire</u></b>", "plus risquée, cote au-dessus de sa vraie valeur, mise réduite"),
