@@ -546,6 +546,12 @@ def tg_results(now=None):
                 for y in group:
                     mark = {"win": "✅", "lose": "❌"}.get(y["reported"], "❔")
                     lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} {(' @ ' + engine.fr(y['odds'], 2)) if y.get('odds') else ''}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))
+            done_all = [y for y in shared if y.get("reported") in ("win", "lose") and y.get("tier") != "combo_marker"]
+            if done_all:  # bilan cumulé depuis le début
+                w_all = sum(y["reported"] == "win" for y in done_all)
+                lines.append(f"\n📈 <b><u>Depuis le début</u> : {w_all}/{len(done_all)} gagnés</b>\n"
+                             f"✅ {w_all} gagné{'s' if w_all > 1 else ''} · ❌ {len(done_all) - w_all} perdu{'s' if len(done_all) - w_all > 1 else ''}"
+                             f" · {round(w_all * 100 / len(done_all))} % de réussite")
             try:
                 tg_send("\n".join(lines))
                 t.setdefault("bilans", []).append(x["date"])
