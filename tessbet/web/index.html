@@ -67,6 +67,8 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .odds { font: 700 2.7rem/1 var(--display); font-variant-numeric: tabular-nums; color: var(--ink); }
 .stub small { margin-top: 6px; font-size: .78rem; line-height: 1.25; color: rgba(16,32,26,.78); overflow-wrap: anywhere; }
 
+.newtag { background: var(--accent, #f5c400); color: #111; font-weight: 700; border-radius: 6px; padding: 1px 7px; font-size: .8rem; margin-right: 6px; }
+.newsline { margin: 4px 0 10px; font-weight: 600; }
 .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: .85rem; }
 .pick { margin: 6px 0 2px; font: 700 1.4rem/1.15 var(--display); }
 .match { margin: 0; color: var(--ink-2); font-size: .95rem; overflow-wrap: anywhere; }
@@ -655,7 +657,7 @@ function ticket(s) {
     el('div', { class: 'body' },
       value ? el('div', { class: 'vbanner' }, el('b', { text: '💡 Bonne affaire' }), ` – plus risqué : ${pct(s.prob)} de chances. La cote vaut plus que le risque, mais tu perdras plus souvent : petite mise.`) : null,
       outsider ? el('div', { class: 'vbanner obanner' }, el('b', { text: '🎲 Outsider – coup de poker' }), ` : seulement ${pct(s.prob)} de chances, mais la cote vaut plus que ce risque. Mise fixe de ${eur(suggested)}, jamais en combiné. Perdre plusieurs fois de suite est normal.`) : null,
-      el('div', { class: 'meta' }, el('span', { text: `${SPORT[s.sport] || ''} ${s.league}` }), el('span', { text: nightTxt(s.kickoff_local) })),
+      el('div', { class: 'meta' }, el('span', {}, s.new ? el('span', { class: 'newtag', text: '🆕 Nouveau' }) : null, `${SPORT[s.sport] || ''} ${s.league}`), el('span', { text: nightTxt(s.kickoff_local) })),
       el('h2', { class: 'pick', text: s.pick_label }),
       el('p', { class: 'match', text: s.match }),
       el('div', { class: 'proba' },
@@ -874,7 +876,7 @@ function comboCard(cb) {
   };
   return el('article', { class: 'combocard' },
     el('div', { class: 'cbhead' },
-      el('div', {}, el('h3', { text: '🎟️ Combiné du jour' }), el('p', { class: 'cbsub', text: `${plural(cb.legs.length, 'match', 'matchs')} confirmés par Claude · sur ${cb.site_name}` })),
+      el('div', {}, el('h3', {}, cb.new ? el('span', { class: 'newtag', text: '🆕 Nouveau' }) : null, '🎟️ Combiné du jour'), el('p', { class: 'cbsub', text: `${plural(cb.legs.length, 'match', 'matchs')} confirmés par Claude · sur ${cb.site_name}` })),
       el('div', { class: 'cbodds' }, el('small', { text: 'Cote totale' }), el('b', { text: odds(cb.total_odds) }))),
     el('ul', { class: 'cblegs' }, cb.legs.map(l => el('li', {},
       el('span', { class: 'cbtime', text: `${ball(l)}${nightTxt(l.kickoff_local)}` }),
@@ -887,12 +889,17 @@ function comboCard(cb) {
 }
 
 /* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
+function newsText(d) {
+  const at = d.prev_at ? ' de ' + hhmm(d.prev_at) : '';
+  return d.news ? `🆕 ${plural(d.news, 'nouveauté', 'nouveautés')} depuis l'analyse précédente${at}` : `Rien de nouveau depuis l'analyse précédente${at}.`;
+}
 function daySection(i, multi) {
   const d = i.d, today = i.day === 'today', word = today ? 'aujourd\'hui' : 'demain';
   const sec = el('section', { class: 'daysec' });
   if (multi) sec.append(el('h2', { class: 'dayhead' }, today ? 'Aujourd\'hui' : 'Demain', el('span', { text: fmtDay(i.date) }),
     i.kind === 'done' ? el('em', { text: i.picks ? plural(i.picks, 'pari', 'paris') : 'aucun pari' }) : null));
   if (i.kind === 'done' && i.picks) sec.append(el('p', { class: 'summary', text: d.message || '' }));
+  if (i.kind === 'done' && d.news != null) sec.append(el('p', { class: 'newsline', text: newsText(d) }));
   const box = el('div', { class: 'cols' });
   if (i.kind === 'todo') {
     const last = today && d.generated_at && d.date !== i.date ? fmtDay(d.date) : null;
@@ -1687,7 +1694,8 @@ async function launch(source) {
     state.busy = false; renderToday();
     const res = targets.map(i => state[i.day]), waiting = res.filter(r => r.waiting);
     const f = waiting.map(r => r.fire || {}).find(x => x.status === 'error' || x.status === 'manual');
-    if (!waiting.length) toast('Analyse mise à jour.');
+    const nd = res.filter(r => r.news != null);
+    if (!waiting.length) toast(nd.length ? nd.map(newsText).join(' · ') : 'Analyse mise à jour.');
     else if (f && f.status === 'error') toast('Claude n\'a pas pu être réveillé : ' + f.error + '.', true);
     else if (f) toast('Réveil automatique non réglé : colle le jeton de la tâche Claude dans les réglages de l\'application.', true);
     else toast('Claude est prévenu. Le résultat arrivera ici tout seul.');

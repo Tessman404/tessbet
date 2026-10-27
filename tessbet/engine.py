@@ -124,6 +124,36 @@ def result_path(mode, date_iso):
     return os.path.join(DATA, "history", f"{date_iso}.json")
 
 
+def _news_key(x):
+    return f"{x.get('match')}|{x.get('pick_label') or x.get('pick')}"
+
+
+def mark_news(result):
+    """Compare avec l'analyse précédente du même jour : chaque pari qui n'y était pas est marqué « nouveau »."""
+    try:
+        with open(result_path(result["mode"], result["date"]), encoding="utf-8") as f:
+            prev = json.load(f)
+    except (OSError, ValueError):
+        prev = None
+    if not prev or prev.get("date") != result["date"]:
+        result["known"], result["news"] = [], None  # première analyse du jour : rien à comparer
+    else:
+        known = set(prev.get("known") or []) | {_news_key(s) for s in prev.get("selections") or []}
+        if prev.get("combo"):
+            known.add("combo:" + "+".join(l["match"] for l in prev["combo"]["legs"]))
+        result["known"] = sorted(known)
+        n = 0
+        for x in result.get("selections") or []:
+            x["new"] = _news_key(x) not in known
+            n += x["new"]
+        if result.get("combo"):
+            result["combo"]["new"] = ("combo:" + "+".join(l["match"] for l in result["combo"]["legs"])) not in known
+            n += result["combo"]["new"]
+        result["news"] = None if result.get("waiting") else n
+        result["prev_at"] = prev.get("generated_at")
+    return result
+
+
 def save_result(result):
     """Range l'analyse dans le fichier de son jour ; celle d'aujourd'hui est aussi la « dernière » (selections.json)."""
     write_json(result_path(result["mode"], result["date"]), result)
@@ -1378,6 +1408,7 @@ def run(mode=None, offset=None):
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
+    mark_news(result)
     save_result(result)  # un fichier par jour : on peut revoir les paris donnés, et préparer demain
     if os.environ.get("TESSBET_NO_NOTIFY") or result["waiting"]:
         result["notification"] = "pas encore envoyée"
