@@ -1,5 +1,5 @@
 name: Tessbet
-version: "2.18.2"
+version: "2.18.3"
 slug: tessbet
 description: Paris du jour (foot, basket, tennis) vérifiés par Claude
 arch: [aarch64, amd64]
