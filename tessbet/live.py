@@ -221,7 +221,7 @@ def pick_status(side, score):
     return "ton équipe mène" if mine > other else "égalité" if mine == other else "ton équipe est menée"
 
 
-LEAD_PAID = {"football": (2, "2 buts"), "basketball": (20, "20 points")}  # offre Winamax : avance qui rend le pari payé
+LEAD_PAID = {"football": (2, "2 buts"), "basketball": (20, "20 points"), "hockey": (3, "3 buts")}  # offre Winamax : avance qui rend le pari payé
 
 
 def lead_note(sport):
@@ -235,6 +235,26 @@ def two_up(side, score, sport="football"):
         return False
     h, a = score
     return (h - a if side == "home" else a - h) >= LEAD_PAID[sport][0]
+
+
+def max_lead(slug, ev, comp, home_idx, side):
+    """Plus grosse avance de l'équipe choisie pendant le match, d'après le détail des points marqués (ESPN)."""
+    if side not in ("home", "away") or not ev or not ev.get("id"):
+        return 0
+    try:
+        data, _ = engine.http_json(f"{ESPN}/{slug}/summary?event={ev['id']}", {"User-Agent": "Mozilla/5.0 (Tessbet)"}, 15)
+    except Exception:
+        return 0
+    our_home_is_espn_home = comp["competitors"][home_idx].get("homeAway", "home") == "home"
+    best = 0
+    for p in data.get("plays") or []:
+        if not p.get("scoringPlay") or p.get("homeScore") is None:
+            continue
+        diff = int(p["homeScore"]) - int(p["awayScore"])  # côté « domicile » d'ESPN
+        if not our_home_is_espn_home:
+            diff = -diff
+        best = max(best, diff if side == "home" else -diff)
+    return best
 
 
 def final_result(side, score):
@@ -477,6 +497,11 @@ def tg_results(now=None):
     for x in shared:  # tennis annoncé sur un score à égalité (données incomplètes) : on revérifie et on corrige
         if x.get("sport") == "tennis" and x.get("reported") in ("win", "lose") and re.match(r"(\d+)-\1\b", x.get("score") or ""):
             x["correction"], x["reported"] = x["reported"], None
+    recent_day = (engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc)).date() - dt.timedelta(days=1)).isoformat()
+    for x in shared:  # défaites récentes : on revérifie l'avance maximale (offre Winamax) et on corrige si besoin
+        if (x.get("reported") == "lose" and x.get("sport") in LEAD_PAID and not x.get("lead_checked")
+                and not x.get("two_up") and x.get("date", "") >= recent_day):
+            x["lead_checked"], x["correction"], x["reported"] = True, "lose", None
     for x in shared:
         if x.get("reported") or now < _tg_next.get(x["id"], 0) or x.get("tier") == "combo_marker":
             continue
@@ -512,6 +537,9 @@ def tg_results(now=None):
             _tg_next[x["id"]] = now + ((90 if foot else 180) if found else 600)  # match en cours : on repasse souvent
             continue
         res = final_result(side, found["score"])
+        if res == "lose" and foot and not x.get("two_up") and max_lead(slug, ev, comp, idx, side) >= LEAD_PAID[x["sport"]][0]:
+            x["two_up"] = True  # avance ratée pendant le suivi : retrouvée dans le détail du match
+        x["lead_checked"] = True
         saved = res == "lose" and x.get("two_up")  # l'adversaire est revenu, mais le pari était déjà payé
         if saved:
             res = "win"
