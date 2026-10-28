@@ -455,6 +455,9 @@ def tg_send(text):
 _tg_next = {}
 
 
+GIVE_UP_H = 6  # heures après le début : au-delà, un match sans résultat est compté « introuvable »
+
+
 def tg_results(now=None):
     """À la fin de chaque match proposé et partagé, le bot annonce s'il est gagné ou perdu, puis le bilan du jour."""
     now = now or time.time()
@@ -502,6 +505,9 @@ def tg_results(now=None):
         side = pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away)
         if foot and found and found["state"] == "in" and not x.get("two_up") and two_up(side, found["score"], x["sport"]):
             x["two_up"], dup = True, True  # mémorisé (dup : on enregistre le fichier)
+        if (not found or found["state"] != "post") and kick and now > kick + GIVE_UP_H * 3600:
+            x["reported"], dup = "unknown", True  # résultat introuvable (ligue non suivie) : le bilan du jour ne reste pas bloqué
+            continue
         if not found or found["state"] != "post":
             _tg_next[x["id"]] = now + ((90 if foot else 180) if found else 600)  # match en cours : on repasse souvent
             continue
@@ -530,6 +536,9 @@ def tg_results(now=None):
         x["reported"] = res
         x["score"] = sc
         sent += 1
+    recent = (engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc)).date() - dt.timedelta(days=1)).isoformat()  # jamais de vieux bilans renvoyés
+    for bday in sorted({y["date"] for y in shared if y["date"] >= recent}):  # bilan d'un jour : quand tous ses matchs ont un résultat
+        x = {"date": bday}
         day_picks = [y for y in shared if y["date"] == x["date"] and y.get("tier") != "combo_marker" and y.get("reported") != "doublon"]
         if send["bilan"] and all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
             def count(group):
@@ -545,6 +554,8 @@ def tg_results(now=None):
                 lines.append(f"\n<b><u>{label}</u> : {w}/{k}</b>")
                 for y in group:
                     mark = {"win": "✅", "lose": "❌"}.get(y["reported"], "❔")
+                    if y["reported"] == "unknown" and not y.get("score"):
+                        y = dict(y, score="résultat introuvable")
                     lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} {(' @ ' + engine.fr(y['odds'], 2)) if y.get('odds') else ''}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))
             done_all = [y for y in shared if y.get("reported") in ("win", "lose") and y.get("tier") != "combo_marker"]
             if done_all:  # bilan cumulé depuis le début
@@ -558,6 +569,7 @@ def tg_results(now=None):
                 t["bilans"] = t["bilans"][-14:]
             except Exception:
                 pass
+            dup = True  # on enregistre que le bilan est parti
     if sent or dup or any(x.get("reported") == "unknown" for x in shared):
         engine.write_json(_path("telegram.json"), t)
     return sent
