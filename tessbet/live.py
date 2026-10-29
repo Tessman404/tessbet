@@ -175,8 +175,11 @@ def read_state(comp, home_idx):
                 h += 1
             elif teams[1 - home_idx].get("winner"):
                 a += 1
-        if typ.get("state") == "post" and h == a:  # fini mais sets à égalité : données incomplètes, on attend la mise à jour
-            typ = dict(typ, state="in")
+        wins = [bool(teams[home_idx].get("winner")), bool(teams[1 - home_idx].get("winner"))]
+        if typ.get("state") == "post" and any(wins) and (h > a) != wins[0]:  # le vainqueur indiqué par ESPN fait foi
+            h, a = (max(h, a + 1), a) if wins[0] else (h, max(a, h + 1))
+        if typ.get("state") == "post" and (h == a or (not any(wins) and max(h, a) < 2 and typ.get("name") != "STATUS_RETIRED")):
+            typ = dict(typ, state="in")  # « fini » trop tôt (sets à égalité, ou aucun vainqueur ni 2 sets gagnés) : on attend
         clock = (f"set {len(games)} : {games[-1]}" + (f" ({' '.join(games[:-1])})" if len(games) > 1 else "")) if typ.get("state") == "in" and games \
             else " ".join(games) + (" (abandon)" if typ.get("name") == "STATUS_RETIRED" else "")
     return {"state": typ.get("state", "pre"), "name": typ.get("name", ""), "clock": clock,
@@ -495,7 +498,9 @@ def tg_results(now=None):
             x["reported"], dup = "doublon", True
         seen_keys.add(k)
     for x in shared:  # tennis annoncé sur un score à égalité (données incomplètes) : on revérifie et on corrige
-        if x.get("sport") == "tennis" and x.get("reported") in ("win", "lose") and re.match(r"(\d+)-\1\b", x.get("score") or ""):
+        m = re.match(r"(\d+)-(\d+)\b", x.get("score") or "")
+        if (x.get("sport") == "tennis" and x.get("reported") in ("win", "lose") and m and "abandon" not in x.get("score", "")
+                and (m.group(1) == m.group(2) or max(int(m.group(1)), int(m.group(2))) < 2)):
             x["correction"], x["reported"] = x["reported"], None
     recent_day = (engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc)).date() - dt.timedelta(days=1)).isoformat()
     for x in shared:  # défaites récentes : on revérifie l'avance maximale (offre Winamax) et on corrige si besoin
