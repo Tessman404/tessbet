@@ -820,7 +820,7 @@ function renderCmd() {
   box.append(el('div', { class: 'main' },
     el('div', { class: 'state' }, el('span', { class: 'dot ' + t.dot, 'aria-hidden': 'true' }),
       el('div', {}, el('h2', { text: t.title }), el('p', { class: 'sub' + (t.err ? ' err' : ''), role: t.err ? 'alert' : null, text: t.sub }))),
-    el('div', { class: 'ctas' }, btn, shareButton())), horizonRow());
+    el('div', { class: 'ctas' }, btn, shareButton())), reportButtons(), horizonRow());
   if (o.source === 'claude_task' && o.kind === 'waiting') {  // la voie payante reste possible, mais discrète
     box.append(el('details', { class: 'more' }, el('summary', { text: 'Claude ne répond pas ? Autres options' }),
       el('p', { text: 'L\'API Anthropic peut faire l\'analyse tout de suite, mais elle consomme des crédits de ta clé' + (o.h === 48 ? ' (deux fois plus pour deux jours).' : '.') }),
@@ -968,14 +968,14 @@ function reportButtons() {
   const send = (scope, label) => {
     const btn = el('button', { class: 'btn small tg', type: 'button', text: label });
     btn.addEventListener('click', async () => {
-      if (!confirm(scope === 'today' ? 'Envoyer le bilan de tes paris du jour sur le groupe Telegram ?' : 'Envoyer le bilan de tous tes paris depuis le début sur le groupe Telegram ?')) return;
+      if (!confirm(scope === 'today' ? 'Envoyer sur Telegram le bilan des pronos Tessbet du jour ?' : 'Envoyer sur Telegram le bilan de tous les pronos Tessbet depuis le début ?')) return;
       btn.disabled = true;
       try { await api('telegram/report', 'POST', { scope }); toast('Bilan envoyé sur Telegram.'); } catch (e) { toast(e.message, true); }
       btn.disabled = false;
     });
     return btn;
   };
-  return el('div', { class: 'panel reportbtns' }, el('p', { class: 'whysub', text: '📣 Envoyer le bilan de mes paris sur Telegram' }),
+  return el('div', { class: 'panel reportbtns' }, el('p', { class: 'whysub', text: '📣 Envoyer le bilan des pronos Tessbet sur Telegram (tous les matchs proposés, pas tes mises)' }),
     el('div', { class: 'ctas' }, send('all', '📊 Depuis le début'), send('today', '📅 Aujourd\'hui')));
 }
 
@@ -1126,7 +1126,6 @@ function renderTrack() {
       el('div', { class: 'cell' }, el('span', { text: 'Réussite' }), el('strong', { text: s.win_rate == null ? '–' : pct(s.win_rate) })),
       el('div', { class: 'cell' }, el('span', { text: 'Rendement' }), el('strong', { text: s.roi == null ? '–' : pct(s.roi, 1) })),
       el('div', { class: 'cell' }, el('span', { text: 'Paris terminés' }), el('strong', { text: String(s.n_settled) }))),
-    reportButtons(),
     el('div', { class: 'limit' },
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),

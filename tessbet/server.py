@@ -907,53 +907,56 @@ def _eur(x, sign=False):
 
 
 def my_report(scope="all", today=None):
-    """Le bilan de MES paris (Mes mises) : depuis le début, ou la journée en cours. Texte HTML pour Telegram."""
+    """Bilan des matchs PROPOSÉS par Tessbet (envoyés sur Telegram), pas les mises perso : depuis le début, ou la journée."""
     today = today or today_paris()
-    bets = sorted(load_bets()["bets"], key=lambda b: (b.get("date", ""), b.get("created", "")))
+    picks = [x for x in read_json(TG_PATH, {}).get("shared") or []
+             if x.get("tier") != "combo_marker" and x.get("reported") not in ("doublon", "skip")]
     if scope == "today":
-        bets = [b for b in bets if b.get("date") == today]
+        picks = [x for x in picks if x.get("date") == today]
     jour = f"{today[8:10]}/{today[5:7]}"
     if scope == "today":
-        head = f"📅 <b><u>Mes paris du {jour}</u></b>"
+        head = f"📅 <b><u>Tessbet – les pronos du {jour}</u></b>"
     else:
-        first = bets[0]["date"] if bets else today
-        head = f"📊 <b><u>Mes paris depuis le début</u></b>\n<i>du {first[8:10]}/{first[5:7]} au {jour}</i>"
-    if not bets:
-        return head + "\n\nAucun pari enregistré" + (" aujourd'hui." if scope == "today" else ".")
-    played = [b for b in bets if b["result"] in ("win", "lose")]
-    won = [b for b in played if b["result"] == "win"]
-    pending = [b for b in bets if b["result"] == "pending"]
-    staked = round(sum(b["stake"] for b in played), 2)
-    back = round(sum(returned(b) for b in played), 2)
-    profit = round(sum(bet_profit(b) for b in played), 2)
-    combos = sum(1 for b in bets if b.get("legs"))
-    out = [head, "",
-           f"🎯 Paris : <b>{len(bets)}</b> ({len(bets) - combos} simple{'s' if len(bets) - combos > 1 else ''}, {combos} combiné{'s' if combos > 1 else ''})"
-           + (f" · ⏳ {len(pending)} en cours" if pending else "")]
-    if played:
-        out += [f"✅ Gagnés : <b>{len(won)}</b> · ❌ Perdus : <b>{len(played) - len(won)}</b> · {round(len(won) * 100 / len(played))} % de réussite",
-                f"💶 Misé {_eur(staked)} · récupéré {_eur(back)}",
-                f"{'📈' if profit >= 0 else '📉'} <b>Bénéfice : {_eur(profit, True)}</b>" + (f" ({round(profit * 100 / staked):+d} %)" if staked else "")]
-        best = max(won, key=lambda b: b["odds"], default=None)
-        if best and scope != "today":
-            out.append(f"🏆 Plus grosse cote gagnée : <b>{engine.fr(best['odds'], 2)}</b> ({_h(best['match'] if not best.get('legs') else 'combiné de ' + str(len(best['legs'])) + ' matchs')})")
-    if pending:
-        out.append(f"⏳ En jeu : {_eur(sum(b['stake'] for b in pending))}, gain possible {_eur(sum(win_profit(b) for b in pending), True)}")
-    if scope == "today":
-        out.append("")
-        for b in bets:
-            mark = {"win": "✅", "lose": "❌", "void": "↩️"}.get(b["result"], "⏳")
-            what = (f"Combiné de {len(b['legs'])} matchs" if b.get("legs") else f"{_h(b['match'])} – {_h(b['pick'])}")
-            res = _eur(bet_profit(b), True) if b["result"] in ("win", "lose") else f"gain possible {_eur(win_profit(b), True)}" if b["result"] == "pending" else "remboursé"
-            out.append(f"{mark} {what} @ {engine.fr(eff_odds(b), 2)} · mise {_eur(b['stake'])} · {res}")
-    else:
+        first = min((x["date"] for x in picks), default=today)
+        head = f"📊 <b><u>Tessbet – bilan depuis le début</u></b>\n<i>tous les matchs proposés, du {first[8:10]}/{first[5:7]} au {jour}</i>"
+    if not picks:
+        return head + "\n\nAucun match proposé" + (" aujourd'hui." if scope == "today" else ".")
+    groups = [("🎯", "Pronos de confiance", lambda x: x.get("tier") in (None, "fiable")),
+              ("💡", "Bonnes affaires", lambda x: x.get("tier") == "value"),
+              ("🎲", "Outsiders", lambda x: x.get("tier") == "outsider"),
+              ("🤔", "Moins sûrs", lambda x: x.get("tier") == "moins_sur")]
+
+    def line(xs):
+        done = [x for x in xs if x.get("reported") in ("win", "lose")]
+        w = sum(x["reported"] == "win" for x in done)
+        wait = sum(1 for x in xs if not x.get("reported"))
+        parts = ([f"{w}/{len(done)} gagnés ({round(w * 100 / len(done))} %)"] if done else []) + ([f"⏳ {wait} en cours"] if wait else [])
+        return " · ".join(parts) or "résultat introuvable"
+
+    out = [head]
+    for emo, name, keep in groups:
+        xs = [x for x in picks if keep(x)]
+        if not xs:
+            continue
+        out += ["", f"{emo} <b><u>{name}</u></b> : {line(xs)}"]
+        if scope == "today":
+            for x in xs:
+                mark = {"win": "✅", "lose": "❌", "unknown": "❔"}.get(x.get("reported"), "⏳")
+                sc = f" ({_h(x['score'])})" if x.get("score") else ""
+                out.append(f"{mark} {_h(x['match'])} – {_h(x['pick'])}{sc}")
+    done = [x for x in picks if x.get("reported") in ("win", "lose")]
+    if done:
+        w = sum(x["reported"] == "win" for x in done)
+        out += ["", f"📈 <b>Total : {w}/{len(done)} gagnés · {round(w * 100 / len(done))} % de réussite</b>"]
+    if scope != "today":
         days = {}
-        for b in played:
-            x = days.setdefault(b["date"], [0, 0, 0.0])
-            x[0] += 1; x[1] += b["result"] == "win"; x[2] = round(x[2] + bet_profit(b), 2)
+        for x in done:
+            d = days.setdefault(x["date"], [0, 0])
+            d[0] += 1; d[1] += x["reported"] == "win"
         if days:
             out += ["", "<b><u>Jour par jour</u></b>"]
-            out += [f"• {d[8:10]}/{d[5:7]} : {w}/{n} gagnés · {_eur(p, True)}" for d, (n, w, p) in sorted(days.items())]
+            out += [f"• {d[8:10]}/{d[5:7]} : {w}/{n} gagnés" for d, (n, w) in sorted(days.items())]
+    out += ["", "<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre.</i>"]
     return "\n".join(out)
 
 
