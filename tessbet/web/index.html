@@ -68,6 +68,10 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .stub small { margin-top: 6px; font-size: .78rem; line-height: 1.25; color: rgba(16,32,26,.78); overflow-wrap: anywhere; }
 
 .newtag { background: var(--accent, #f5c400); color: #111; font-weight: 700; border-radius: 6px; padding: 1px 7px; font-size: .8rem; margin-right: 6px; }
+.wxprep ol { margin: 6px 0; padding-left: 20px; }
+.wxprep li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
+.wxprep li.done label { opacity: .5; text-decoration: line-through; }
+.btn.wx { background: #e10600; color: #fff; }
 .reportbtns .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
 .newsline { margin: 4px 0 10px; font-weight: 600; }
 .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: .85rem; }
@@ -671,6 +675,7 @@ function ticket(s) {
       offerChips,
       claudeBox,
       analyse,
+      wxBtn({ pick_team: s.pick_team, pick: s.pick_label, sport: s.sport }),
       el('button', { class: 'btn small copy', type: 'button', text: 'Copier l\'analyse pour la partager',
         onclick: async () => toast((await copyText(shareText(s))) ? 'Analyse copiée : colle-la dans ta conversation.' : 'Copie impossible sur cet appareil.', false) }),
       el('details', {}, el('summary', { text: 'Pourquoi ce pari ?' }), el('ul', {}, details)),
@@ -1485,6 +1490,31 @@ function legRow(l) {
       onclick: () => { state.slip.legs = state.slip.legs.filter(x => x !== l); state.slip.total = null; renderBet(); } }));
 }
 
+/* Préparer le pari sur Winamax : on copie le nom à chercher et on ouvre Winamax sur le bon sport. */
+const WX_SPORT = { football: 1, basketball: 2, hockey: 4, tennis: 5 };
+function wxName(l) { return l.pick_team || String(l.pick || '').replace(/^Victoire de /, '').replace(/ \(.*\)$/, ''); }
+function wxBtn(l, label = 'Ouvrir sur Winamax') {
+  return el('button', { class: 'btn small wx', type: 'button', text: label, onclick: async () => {
+    const name = wxName(l);
+    const ok = await copyText(name);
+    window.open('https://www.winamax.fr/paris-sportifs' + (WX_SPORT[l.sport] ? '/sports/' + WX_SPORT[l.sport] : ''), '_blank', 'noopener');
+    toast(ok ? `« ${name} » copié : colle-le dans la recherche Winamax.` : `Cherche « ${name} » sur Winamax.`);
+  } });
+}
+function wxPrep(s) {
+  const combo = isCombo(s), st = num(s.stake) > 0 ? num(s.stake) : null;
+  return el('div', { class: 'panel wxprep' },
+    el('h3', { text: '📱 À jouer sur Winamax' }),
+    el('ol', {}, s.legs.map(l => {
+      const box = el('input', { type: 'checkbox', 'aria-label': 'Ajouté sur Winamax : ' + wxName(l) });
+      const li = el('li', {}, el('label', {}, box, ' ', el('b', { text: wxName(l) }), ` @ ${odds(l.odds)}`, el('small', { text: ' · ' + l.match + (l.time ? ' · ' + l.time : '') })), wxBtn(l, 'Ouvrir'));
+      box.addEventListener('change', () => li.classList.toggle('done', box.checked));
+      return li;
+    })),
+    el('p', { class: 'note2', text: (combo ? `Combiné : cote totale attendue ${odds(comboOdds(s))}` : `${plural(s.legs.length, 'pari simple', 'paris simples')}`)
+      + (st ? ` · mise ${eur(st)}` : '') + '. Coche chaque match une fois ajouté, vérifie que la cote Winamax est la même, valide sur Winamax, puis appuie sur « J\'ai parié » ici.' }));
+}
+
 function payBlock() {
   const s = state.slip, n = s.legs.length, combo = isCombo(s);
   const books = state.stats ? state.stats.books : [];
@@ -1526,6 +1556,7 @@ function payBlock() {
     el('div', { class: 'stubbox' }, left, el('div', { class: 'r' }, el('small', { text: 'Gain possible' }), gain)),
     note,
     combo ? el('p', { class: 'note2', text: 'Un combiné est perdu dès qu\'un seul match est perdu. Si un match est annulé, il est retiré de la cote.' }) : null,
+    wxPrep(s),
     el('button', { class: 'btn save', type: 'button', text: combo ? 'J\'ai parié ce combiné' : n > 1 ? 'J\'ai parié ces paris' : 'J\'ai parié', onclick: () => saveSlip(false) }));
 }
 
