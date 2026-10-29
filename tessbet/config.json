@@ -30,7 +30,7 @@
     "hockey": ["icehockey_nhl"]
   },
 
-  "playable_books": ["betclic", "winamax", "unibet", "parionssport", "zebet", "pmu", "netbet", "vbet", "bwin"],
+  "playable_books": ["winamax"],
   "sharp_books": { "pinnacle": 3, "betfair_ex_eu": 2, "matchbook": 2 },
 
   "selection": {
@@ -65,7 +65,7 @@
     "min_total": 2.5,
     "max_total": 8.0,
     "min_prob": 0.15,
-    "sites": ["winamax", "unibet"]
+    "sites": ["winamax"]
   },
 
   "outsider": {

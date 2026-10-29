@@ -68,6 +68,7 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .stub small { margin-top: 6px; font-size: .78rem; line-height: 1.25; color: rgba(16,32,26,.78); overflow-wrap: anywhere; }
 
 .newtag { background: var(--accent, #f5c400); color: #111; font-weight: 700; border-radius: 6px; padding: 1px 7px; font-size: .8rem; margin-right: 6px; }
+.reportbtns .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
 .newsline { margin: 4px 0 10px; font-weight: 600; }
 .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: .85rem; }
 .pick { margin: 6px 0 2px; font: 700 1.4rem/1.15 var(--display); }
@@ -547,7 +548,7 @@ const ball = x => SPORT[sportOf(x)] + ' ';
 /* Match de la nuit (avant 7 h) : il compte dans la journée de la veille. */
 const nightTxt = hhmm => (parseInt(hhmm, 10) < 7 ? `🌙 ${hhmm} (nuit)` : hhmm);
 const state = { today: null, tomorrow: null, stats: null, bets: [], settings: null, busy: false, loadedFor: null,
-  matches: null, slip: { legs: [], mode: 'combo', book: '', stake: '', total: null, filter: 'all', confirmRefresh: false, refreshing: false, manualEl: null } };
+  matches: null, slip: { legs: [], mode: 'combo', book: 'winamax', stake: '', total: null, filter: 'all', confirmRefresh: false, refreshing: false, manualEl: null } };
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -561,6 +562,7 @@ function el(tag, props = {}, ...kids) {
   for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid.nodeType ? kid : document.createTextNode(kid));
   return n;
 }
+const onlyWx = (books, keep) => (books || []).filter(b => b.key === 'winamax' || (keep && b.key === keep));  // désormais : Winamax seulement
 const bookName = k => ((state.stats && state.stats.books.find(x => x.key === k)) || {}).name || k;
 const safeUrl = u => { try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; } };
 const eur = n => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
@@ -617,12 +619,12 @@ function ticket(s) {
   const books = state.stats ? state.stats.books : [];
   const baseOf = k => k.replace(/_fr$/, '');
   const offerOf = bk => (s.offers || []).find(o => baseOf(o.key) === bk.key);
-  const mine = books.filter(bk => ['winamax', 'unibet'].includes(bk.key) && offerOf(bk));
+  const mine = books.filter(bk => bk.key === 'winamax' && offerOf(bk));
   const bestMine = mine.sort((x, y) => offerOf(y).odds - offerOf(x).odds)[0];
   const bookSel = el('select', { id: 'book-' + s.id, 'aria-label': 'Bookmaker' },
-    el('option', { value: '', text: 'Choisis le site' }), books.map(bk => el('option', { value: bk.key, text: bk.name })));
+    onlyWx(books).map(bk => el('option', { value: bk.key, text: bk.name })));
   const oddsInput = el('input', { type: 'number', min: '1.01', step: '0.01', value: String((bestMine ? offerOf(bestMine).odds : s.odds)), id: 'odds-' + s.id, inputmode: 'decimal' });
-  if (bestMine) bookSel.value = bestMine.key;
+  bookSel.value = 'winamax';
   bookSel.addEventListener('change', () => {
     const bk = books.find(x => x.key === bookSel.value); const o = bk && offerOf(bk);
     if (o) oddsInput.value = String(o.odds);
@@ -956,6 +958,22 @@ function renderRecap() {
     tile('En direct', live ? plural(live, 'match', 'matchs') : '–', live ? 'en cours maintenant' : items.length ? plural(items.length, 'match à venir', 'matchs à venir') : 'Rien à suivre', 'live', live ? 'live' : ''));
 }
 
+/* Envoyer le bilan de mes paris (depuis le début, ou aujourd'hui) sur le groupe Telegram. */
+function reportButtons() {
+  const send = (scope, label) => {
+    const btn = el('button', { class: 'btn small tg', type: 'button', text: label });
+    btn.addEventListener('click', async () => {
+      if (!confirm(scope === 'today' ? 'Envoyer le bilan de tes paris du jour sur le groupe Telegram ?' : 'Envoyer le bilan de tous tes paris depuis le début sur le groupe Telegram ?')) return;
+      btn.disabled = true;
+      try { await api('telegram/report', 'POST', { scope }); toast('Bilan envoyé sur Telegram.'); } catch (e) { toast(e.message, true); }
+      btn.disabled = false;
+    });
+    return btn;
+  };
+  return el('div', { class: 'panel reportbtns' }, el('p', { class: 'whysub', text: '📣 Envoyer le bilan de mes paris sur Telegram' }),
+    el('div', { class: 'ctas' }, send('all', '📊 Depuis le début'), send('today', '📅 Aujourd\'hui')));
+}
+
 /* Partager les pronos du jour (et les moins sûrs) sur le groupe Telegram des potes. */
 function shareButton() {
   const done = activeDays().some(day => state[day] && state[day].generated_at && !state[day].waiting && state[day].date === dayDate(day));
@@ -1033,7 +1051,7 @@ function betRow(b) {
   }
   const eo = el('input', { type: 'number', min: '1.01', step: '0.01', value: String(b.odds), inputmode: 'decimal', 'aria-label': 'Cote' });
   const es = el('input', { type: 'number', min: '0.5', step: '0.5', value: String(b.stake), inputmode: 'decimal', 'aria-label': 'Mise' });
-  const eb = el('select', { 'aria-label': 'Site' }, el('option', { value: '', text: 'Non précisé' }), state.stats.books.map(bk => el('option', { value: bk.key, text: bk.name })));
+  const eb = el('select', { 'aria-label': 'Site' }, onlyWx(state.stats.books, b.book).map(bk => el('option', { value: bk.key, text: bk.name })));
   eb.value = b.book || '';
   const ebo = el('input', { type: 'text', inputmode: 'decimal', value: b.boost ? String(b.boost).replace('.', ',') : '', placeholder: '0', 'aria-label': 'Boost en %' });
   const edit = el('div', { class: 'edit' }, el('label', { text: 'Site' }), eb, el('label', { text: 'Cote' }), eo, el('label', { text: 'Mise (€)' }), es, el('label', { text: 'Boost (%)' }), ebo,
@@ -1103,6 +1121,7 @@ function renderTrack() {
       el('div', { class: 'cell' }, el('span', { text: 'Réussite' }), el('strong', { text: s.win_rate == null ? '–' : pct(s.win_rate) })),
       el('div', { class: 'cell' }, el('span', { text: 'Rendement' }), el('strong', { text: s.roi == null ? '–' : pct(s.roi, 1) })),
       el('div', { class: 'cell' }, el('span', { text: 'Paris terminés' }), el('strong', { text: String(s.n_settled) }))),
+    reportButtons(),
     el('div', { class: 'limit' },
       el('div', { class: 'row' }, el('span', { text: 'Limite du jour' }), el('span', { text: `${eur(s.staked_today)} sur ${eur(s.daily_cap)}` })),
       el('div', { class: 'track' + (over ? ' over' : '') }, el('i', { style: `width:${used}%` })),
@@ -1469,8 +1488,8 @@ function legRow(l) {
 function payBlock() {
   const s = state.slip, n = s.legs.length, combo = isCombo(s);
   const books = state.stats ? state.stats.books : [];
-  const site = el('select', { 'aria-label': 'Site où tu as parié' }, el('option', { value: '', text: 'Choisis le site' }), books.map(b => el('option', { value: b.key, text: b.name })));
-  site.value = s.book;
+  const site = el('select', { 'aria-label': 'Site où tu as parié' }, onlyWx(books).map(b => el('option', { value: b.key, text: b.name })));
+  s.book = s.book || 'winamax'; site.value = s.book;
   site.addEventListener('change', () => {
     s.book = site.value;
     s.legs.forEach(l => { if (l.offers) l.odds = oddsAt(l, s.book); });   // les cotes du site choisi, quand on les connaît

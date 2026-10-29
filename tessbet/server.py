@@ -309,7 +309,7 @@ def add_bet(body):
     if not match or not pick or odds <= 1 or stake <= 0:
         return 400, {"error": "Il manque une information (match, pari, cote ou mise)."}
     book = str(body.get("book", "")).strip().lower()
-    book = book if book in BOOK_NAMES else ""
+    book = book if book in BOOK_NAMES else "winamax"  # désormais tout se joue sur Winamax
     if body.get("tier") in ("value", "outsider"):  # bonne affaire / outsider proposés par Tessbet : suivis à part
         extra["tier"] = body["tier"]
     boost = clean_boost(body.get("boost"))
@@ -876,6 +876,76 @@ def share_text(days, update=False):
     return "\n".join(out).strip()
 
 
+def _eur(x, sign=False):
+    t = f"{abs(x):,.2f}".replace(",", " ").replace(".", ",") + " €"
+    return (("+" if x > 0 else "−" if x < 0 else "") if sign else ("−" if x < 0 else "")) + t
+
+
+def my_report(scope="all", today=None):
+    """Le bilan de MES paris (Mes mises) : depuis le début, ou la journée en cours. Texte HTML pour Telegram."""
+    today = today or today_paris()
+    bets = sorted(load_bets()["bets"], key=lambda b: (b.get("date", ""), b.get("created", "")))
+    if scope == "today":
+        bets = [b for b in bets if b.get("date") == today]
+    jour = f"{today[8:10]}/{today[5:7]}"
+    if scope == "today":
+        head = f"📅 <b><u>Mes paris du {jour}</u></b>"
+    else:
+        first = bets[0]["date"] if bets else today
+        head = f"📊 <b><u>Mes paris depuis le début</u></b>\n<i>du {first[8:10]}/{first[5:7]} au {jour}</i>"
+    if not bets:
+        return head + "\n\nAucun pari enregistré" + (" aujourd'hui." if scope == "today" else ".")
+    played = [b for b in bets if b["result"] in ("win", "lose")]
+    won = [b for b in played if b["result"] == "win"]
+    pending = [b for b in bets if b["result"] == "pending"]
+    staked = round(sum(b["stake"] for b in played), 2)
+    back = round(sum(returned(b) for b in played), 2)
+    profit = round(sum(bet_profit(b) for b in played), 2)
+    combos = sum(1 for b in bets if b.get("legs"))
+    out = [head, "",
+           f"🎯 Paris : <b>{len(bets)}</b> ({len(bets) - combos} simple{'s' if len(bets) - combos > 1 else ''}, {combos} combiné{'s' if combos > 1 else ''})"
+           + (f" · ⏳ {len(pending)} en cours" if pending else "")]
+    if played:
+        out += [f"✅ Gagnés : <b>{len(won)}</b> · ❌ Perdus : <b>{len(played) - len(won)}</b> · {round(len(won) * 100 / len(played))} % de réussite",
+                f"💶 Misé {_eur(staked)} · récupéré {_eur(back)}",
+                f"{'📈' if profit >= 0 else '📉'} <b>Bénéfice : {_eur(profit, True)}</b>" + (f" ({round(profit * 100 / staked):+d} %)" if staked else "")]
+        best = max(won, key=lambda b: b["odds"], default=None)
+        if best and scope != "today":
+            out.append(f"🏆 Plus grosse cote gagnée : <b>{engine.fr(best['odds'], 2)}</b> ({_h(best['match'] if not best.get('legs') else 'combiné de ' + str(len(best['legs'])) + ' matchs')})")
+    if pending:
+        out.append(f"⏳ En jeu : {_eur(sum(b['stake'] for b in pending))}, gain possible {_eur(sum(win_profit(b) for b in pending), True)}")
+    if scope == "today":
+        out.append("")
+        for b in bets:
+            mark = {"win": "✅", "lose": "❌", "void": "↩️"}.get(b["result"], "⏳")
+            what = (f"Combiné de {len(b['legs'])} matchs" if b.get("legs") else f"{_h(b['match'])} – {_h(b['pick'])}")
+            res = _eur(bet_profit(b), True) if b["result"] in ("win", "lose") else f"gain possible {_eur(win_profit(b), True)}" if b["result"] == "pending" else "remboursé"
+            out.append(f"{mark} {what} @ {engine.fr(eff_odds(b), 2)} · mise {_eur(b['stake'])} · {res}")
+    else:
+        days = {}
+        for b in played:
+            x = days.setdefault(b["date"], [0, 0, 0.0])
+            x[0] += 1; x[1] += b["result"] == "win"; x[2] = round(x[2] + bet_profit(b), 2)
+        if days:
+            out += ["", "<b><u>Jour par jour</u></b>"]
+            out += [f"• {d[8:10]}/{d[5:7]} : {w}/{n} gagnés · {_eur(p, True)}" for d, (n, w, p) in sorted(days.items())]
+    return "\n".join(out)
+
+
+def tg_report(body):
+    st = tg_status()
+    if not st["configured"]:
+        return 400, {"error": "Le jeton du bot Telegram n'est pas réglé (configuration de l'application Tessbet)."}
+    if not st["chat"]:
+        return 400, {"error": "Choisis d'abord le groupe Telegram dans Réglages."}
+    scope = "today" if body.get("scope") == "today" else "all"
+    try:
+        tg_call("sendMessage", {"chat_id": st["chat"]["id"], "text": my_report(scope)[:4000], "parse_mode": "HTML", "disable_web_page_preview": True})
+    except Exception as e:
+        return 400, {"error": str(e)[:200]}
+    return 200, {"ok": True}
+
+
 def tg_share(body):
     st = tg_status()
     if not st["configured"]:
@@ -1111,6 +1181,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(*tg_set_chat(body))
             if path == "/api/telegram/share":
                 return self._send(*tg_share(body))
+            if path == "/api/telegram/report":
+                return self._send(*tg_report(body))
             if path == "/api/moves":
                 return self._send(*add_move(body))
             if path == "/api/bankroll":
