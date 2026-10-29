@@ -1013,7 +1013,7 @@ function renderToday() {
 /* ---------------- Mes mises ---------------- */
 const liveSuffix = x => x.live ? (x.live.state === 'in' ? ` – 🔴 en direct ${x.live.score[0]}-${x.live.score[1]} (${x.live.clock})` : x.live.state === 'post' ? ` – terminé ${x.live.score[0]}-${x.live.score[1]}` : '') : '';
 const gainOf = b => b.win_profit != null ? b.win_profit : b.stake * ((b.eff_odds || b.odds) - 1) * (1 + (b.boost || 0) / 100);
-const boostTxt = b => b.boost ? ` – boost +${String(b.boost).replace('.', ',')} %` : '';
+const boostTxt = b => (b.boost ? ` – boost +${String(b.boost).replace('.', ',')} %` : '') + (b.cashout ? ` – cashout ${eur(b.cashout)}` : '');
 const reloadBets = async () => { await loadStats(); await loadBets(); renderTrack(); };
 
 /* Les matchs d'un combiné : chacun se valide séparément, le combiné s'en déduit. */

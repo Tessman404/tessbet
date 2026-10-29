@@ -86,7 +86,9 @@ def boost_of(b):
 
 
 def win_profit(b):
-    """Gain net si le pari est gagné : mise × (cote − 1), augmenté du boost."""
+    """Gain net si le pari est gagné : mise × (cote − 1), augmenté du boost ; ou somme encaissée en cashout."""
+    if b.get("cashout"):
+        return round(float(b["cashout"]) - b["stake"], 2)
     return round(b["stake"] * (eff_odds(b) - 1) * (1 + boost_of(b) / 100), 2)
 
 
@@ -317,17 +319,31 @@ def add_bet(body):
         return 400, {"error": "Boost invalide (entre 0 et 200 %)."}
     if boost:
         extra["boost"] = boost
+    imported = bool(body.get("imported"))  # pari repris de l'historique Winamax : date et résultat déjà connus
+    if imported:
+        if body.get("result") in ("win", "lose", "void", "pending"):
+            extra["result"] = body["result"]
+        if body.get("cashout"):
+            extra["cashout"] = round(float(body["cashout"]), 2)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", str(body.get("date", ""))):
+            extra["date"] = body["date"]
+        if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", str(body.get("created", ""))):
+            extra["created"] = body["created"]
+        if extra.get("result") in ("win", "lose", "void"):
+            extra["settled_at"] = extra.get("created") or now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
     with LOCK:
         d = load_bets()
         st = compute_stats(d)
-        if stake > st["bankroll"] - st["pending"] + 1e-9:
+        if imported:
+            pass
+        elif stake > st["bankroll"] - st["pending"] + 1e-9:
             return 400, {"error": "Mise supérieure à l'argent disponible."}
-        if st["staked_today"] + stake > st["daily_cap"] and not body.get("force"):
+        if st["staked_today"] + stake > st["daily_cap"] and not body.get("force") and not imported:
             return 409, {"error": f"Cette mise dépasse ta limite du jour ({st['daily_cap']:.2f} €). "
                                   "Tu l'as fixée pour te protéger.", "needs_force": True}
         bet = {"id": uuid.uuid4().hex[:8], "created": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
                "date": today_paris(), "match": match, "pick": pick, "odds": round(odds, 2),
-               "stake": round(stake, 2), "result": "pending", **extra}
+               "stake": round(stake, 2), "result": "pending", **extra}  # extra peut remplacer date/created/result (import)
         if book:
             bet["book"] = book
         d["bets"].append(bet)
@@ -395,6 +411,15 @@ def update_bet(bet_id, body):
                 else:
                     b.pop("boost", None)
             b.update(odds=round(odds, 2), stake=round(stake, 2))
+            if "cashout" in body:  # somme encaissée en cashout (0 ou vide : pas de cashout)
+                try:
+                    co = float(body["cashout"] or 0)
+                except (TypeError, ValueError):
+                    return 400, {"error": "Montant de cashout invalide."}
+                if co > 0:
+                    b["cashout"] = round(co, 2)
+                else:
+                    b.pop("cashout", None)
             if "book" in body:
                 k = str(body["book"]).strip().lower()
                 if k in BOOK_NAMES:
