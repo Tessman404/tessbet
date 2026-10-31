@@ -857,6 +857,7 @@ def share_text(days, update=False):
             cl = s.get("claude") or {}
             return (f"{ball.get(s['sport'], '')} {night(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
                     f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
+                    + (f"\n{'⭐' * s['note']} <b>Note {s['note']}/5</b>" if s.get("note") else "")
                     + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
 
         def drop_line(x):
@@ -867,7 +868,7 @@ def share_text(days, update=False):
                 return f"⏳ <b>Pas encore vérifié</b> · {head}"
             return f"⛔ <b>À éviter</b> · {head}\n<i>Claude : {_h(x.get('resume', ''))[:200]}</i>"
 
-        sections = [("fiable", "🎯 <b><u>Pronos de confiance</u></b>", "les plus sûrs, vérifiés par Claude"),
+        sections = [("fiable", "🎯 <b><u>Pronos de confiance</u></b>", "vérifiés par Claude, notés de 3 à 5 (5 = le plus sûr)"),
                     ("value", "💡 <b><u>Bonne affaire</u></b>", "plus risquée, cote au-dessus de sa vraie valeur, mise réduite"),
                     ("outsider", "🎲 <b><u>Outsiders</u></b>", "coup de poker, petite mise fixe")]
         shown = False
@@ -895,7 +896,7 @@ def share_text(days, update=False):
             out += ["\n" + drop_line(x) for x in plain_drop]
             for n in near:
                 out.append(f"\n• {ball.get(n.get('sport'), '')} {_tg_match(n['match'], n['pick_label'], n.get('pick_team'))} @ {engine.fr(n['odds'], 2)} "
-                           f"({round(n['prob'] * 100)} %, trop juste)")
+                           f"({round(n['prob'] * 100)} %" + (f", note {n['note']}/5" if n.get("note") else ", trop juste") + ")")
         out.append("")
     out.append("\n<i>Aucun pari n'est sûr : ne misez que ce que vous pouvez perdre. Joueurs Info Service 09 74 75 13 13.</i>")
     return "\n".join(out).strip()

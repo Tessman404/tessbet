@@ -68,6 +68,8 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .stub small { margin-top: 6px; font-size: .78rem; line-height: 1.25; color: rgba(16,32,26,.78); overflow-wrap: anywhere; }
 
 .newtag { background: var(--accent, #f5c400); color: #111; font-weight: 700; border-radius: 6px; padding: 1px 7px; font-size: .8rem; margin-right: 6px; }
+.chip.note { background: #2b2410; color: #f5c400; font-weight: 700; letter-spacing: .5px; }
+.chip.note.n5 { background: #f5c400; color: #111; }
 .wxprep ol { margin: 6px 0; padding-left: 20px; }
 .wxprep li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
 .wxprep li.done label { opacity: .5; text-decoration: line-through; }
@@ -670,7 +672,8 @@ function ticket(s) {
         el('div', { class: 'row' }, el('span', { text: 'Chances estimées' }), el('strong', { text: pct(s.prob) })),
         el('div', { class: 'track' }, el('i', { style: `width:${Math.round(s.prob * 100)}%` }), marks)),
       el('div', { class: 'chips' },
-        el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
+        s.note ? el('span', { class: 'chip note n' + s.note, title: 'Note de confiance : 5 = très sûr', text: `${'★'.repeat(s.note)}${'☆'.repeat(5 - s.note)} ${s.note}/5` })
+          : el('span', { class: 'chip ' + conf, text: 'Confiance ' + s.confidence.toLowerCase() }),
         outsider ? el('span', { class: 'chip deal', text: 'Outsider' }) : value ? el('span', { class: 'chip deal', text: 'Pari risqué' }) : s.kind === 'valeur' ? el('span', { class: 'chip deal', text: 'Bonne affaire' }) : el('span', { class: 'chip fav', text: 'Favori solide' })),
       offerChips,
       claudeBox,
@@ -859,7 +862,7 @@ function whyBox(d, title = 'Pourquoi aucun pari ?') {
   const groups = [
     ['⏳ En attente de vérification', 'Ni bons ni mauvais : Claude ne les a pas encore contrôlés, donc ils ne sont pas proposés.', waitingCheck.map(waitLi)],
     ['🤔 Trop justes', `Les plus proches des critères, sur ${plural(d.matches_analysed || 0, 'match analysé', 'matchs analysés')}.`,
-      near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}`,
+      near.map(x => el('li', {}, ball(x), matchTeams(x.match, x.pick_label, x.pick_team), ` – cote ${odds(x.odds)}, ${nightTxt(x.kickoff_local)}` + (x.note ? ` · ${x.note}/5` : ''),
         el('small', { text: 'Trop juste : ' + x.reasons.join(' ; ') + '.' })))]];
   const day = d === state.tomorrow ? 'tomorrow' : 'today';
   const checkBtn = waitingCheck.length > 0 && !d.waiting ? el('button', { class: 'btn small', type: 'button',

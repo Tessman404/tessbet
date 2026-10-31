@@ -272,6 +272,23 @@ def finalize(c):
     return c
 
 
+MIN_NOTE = 3  # un prono « de confiance » doit avoir au moins 3/5, sinon il passe dans les moins sûrs
+
+
+def note_of(c):
+    """Note de confiance de 1 à 5 : chances réelles, accord des sites, stats de forme et avis de Claude.
+    5/5 = très probable ET confirmé par Claude ET tous les signaux d'accord. Jamais une garantie."""
+    p = c["prob"]
+    pts = 3 if p >= 0.85 else 2.5 if p >= 0.78 else 2 if p >= 0.70 else 1.5 if p >= 0.60 else 1 if p >= 0.45 else 0.5
+    pts += 0.25 if c.get("n_books", 0) >= 6 else 0
+    pts += 0.25 if c.get("agree") == c.get("n_books") else 0
+    pts += 0.25 if c.get("dispersion", 1) <= 0.015 else 0
+    pts += {True: 0.5, False: -0.5}.get(c.get("af_agrees"), 0)
+    pts += {"confirme": 1, "prudence": -1}.get((c.get("claude") or {}).get("verdict"), 0)
+    cap = {"outsider": 2, "value": 3}.get(c.get("tier"), 5)
+    return int(max(1, min(cap, int(pts + 0.5))))
+
+
 def fr(x, decimals):
     """Nombre à la française : virgule décimale."""
     return f"{x:.{decimals}f}".replace(".", ",")
@@ -476,7 +493,7 @@ def near_misses(cands, cfg, limit=3):
                      "id": hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:10], "pick_team": c["pick"],
                      "league_key": c.get("league_key", ""), "kickoff": c["commence"],
                      "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
-                     "prob": round(c["prob"], 3), "odds": round(c["odds"], 2), "reasons": why})
+                     "prob": round(c["prob"], 3), "odds": round(c["odds"], 2), "reasons": why, "note": note_of(c)})
         if len(rows) >= limit:
             break
     return rows
@@ -1355,9 +1372,17 @@ def run(mode=None, offset=None):
         cands = [finalize(c) for c in cands]
     picks, info = review_and_pick(cands, cfg, env, today, mode, warnings)
 
-    selections = []
+    selections, low = [], []
     for c in picks:
         kick = to_paris(parse_iso(c["commence"]))
+        note = note_of(c)
+        if c.get("tier", "fiable") == "fiable" and note < MIN_NOTE:  # pas assez sûr : on ne le donne pas comme prono
+            low.append({"match": f"{c['home']} – {c['away']}", "sport": c["sport"], "league": c["league"], "pick_label": pick_label(c),
+                        "id": hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:10], "pick_team": c["pick"],
+                        "league_key": c.get("league_key", ""), "kickoff": c["commence"], "kickoff_local": kick.strftime("%H:%M"),
+                        "prob": round(c["prob"], 3), "odds": round(c["odds"], 2), "note": note,
+                        "reasons": [f"note {note}/5 seulement : pas assez sûr pour un prono de confiance"]})
+            continue
         selections.append({
             "id": hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:10],
             "sport": c["sport"], "league": c["league"], "league_key": c.get("league_key", ""), "pick_team": c["pick"], "kickoff": c["commence"],
@@ -1367,8 +1392,10 @@ def run(mode=None, offset=None):
             "prob": round(c["prob"], 4), "edge": round(c["edge"], 4),
             "kind": c["kind"], "confidence": c["confidence"], "confidence_score": c["confidence_score"],
             "stake_pct": c["stake_pct"], "n_books": c["n_books"], "reasons": explain(c), "tier": c.get("tier", "fiable"),
-            "claude": c.get("claude")})
+            "claude": c.get("claude"), "note": note})
 
+    order = {"fiable": 0, "value": 1, "outsider": 2}
+    selections.sort(key=lambda x: (order.get(x["tier"], 0), -x["note"]))  # les mieux notés d'abord
     analysed = len({c["event_id"] for c in cands})
     n_value = sum(s["tier"] == "value" for s in selections)
     n_out = sum(s["tier"] == "outsider" for s in selections)
@@ -1404,7 +1431,7 @@ def run(mode=None, offset=None):
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
               "combo": combo, "combo_note": combo_note,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
-              "claude_dropped_items": info.get("dropped_items", []), "unverified": info.get("unverified", 0), "near": near_misses(cands, cfg),
+              "claude_dropped_items": info.get("dropped_items", []), "unverified": info.get("unverified", 0), "near": low + [n for n in near_misses(cands, cfg) if n["id"] not in {x["id"] for x in low}],
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
