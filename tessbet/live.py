@@ -558,12 +558,19 @@ def _combo_backfill(t, recent_day):
             continue
         try:
             with open(engine.result_path(mode, x["date"]), encoding="utf-8") as f:
-                cb = (json.load(f) or {}).get("combo") or {}
+                d = json.load(f) or {}
         except (OSError, ValueError):
-            cb = {}
-        if cb.get("legs") and x["match"] == "combo:" + "+".join(l["match"] for l in cb["legs"]):
-            x["legs"] = [{k: l.get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")} for l in cb["legs"]]
-            x["odds"], x["reported"], x["late"], changed = cb.get("total_odds"), None, True, True
+            d = {}
+        pool = {}  # chaque match connu ce jour-là (combiné, pronos, moins sûrs) avec son pari
+        for l in (d.get("combo") or {}).get("legs", []) + (d.get("selections") or []) + (d.get("near") or []):
+            pool.setdefault(l["match"], l)
+        for y in t.get("shared") or []:  # et les matchs déjà partagés ce jour-là
+            if y.get("date") == x["date"] and y.get("tier") != "combo_marker":
+                pool.setdefault(y["match"], dict(y, pick_label=y.get("pick")))
+        names = x["match"][len("combo:"):].split("+")
+        if names and all(n in pool for n in names):
+            x["legs"] = [{k: pool[n].get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")} for n in names]
+            x["reported"], x["late"], changed = None, True, True
     return changed
 
 
