@@ -337,7 +337,7 @@ def select(cands, cfg, limit=None):
     s = cfg["selection"]
     limit = limit or s["max_picks"]
     ok = [c for c in cands
-          if c.get("af_agrees") is not False and c["n_books"] >= s["min_books"]
+          if c.get("playable") and c.get("af_agrees") is not False and c["n_books"] >= s["min_books"]  # cote Winamax obligatoire
           and c["prob"] >= s["min_prob"] and c["odds"] >= s["min_odds"] and c["edge"] >= s["min_edge"]]
     ok.sort(key=lambda c: (c["confidence_score"], c["prob"] - 2 * c["dispersion"] + 0.5 * max(c["edge"], 0)),
             reverse=True)
@@ -479,6 +479,8 @@ def blockers(c, cfg):
         out.append("cote trop basse par rapport aux chances")
     if c.get("af_agrees") is False:
         out.append("l'avis statistique sur la forme n'est pas d'accord")
+    if not c.get("playable"):
+        out.append("pas de cote Winamax disponible")
     return out
 
 
