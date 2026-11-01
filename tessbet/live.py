@@ -712,9 +712,9 @@ def tg_results(now=None):
             kick = dt.datetime.fromisoformat(x["kickoff"].replace("Z", "+00:00")).timestamp()
         except Exception:
             kick = 0
-        foot = x.get("sport") in LEAD_PAID  # foot et basket : suivis dès le début (avance qui rend le pari payé)
-        if kick and now < kick + (0 if foot else 80 * 60):  # sinon : à la fin probable du match
-            _tg_next[x["id"]] = kick + (0 if foot else 80 * 60)
+        foot = x.get("sport") in LEAD_PAID  # foot, basket, hockey : avance qui rend le pari payé
+        if kick and now < kick:  # tous les pronos sont suivis en direct dès le début (onglet En direct)
+            _tg_next[x["id"]] = kick
             continue
         home, away = split_match(x["match"])
         slugs = [LEAGUE_SLUGS[x["league_key"]]] if x.get("league_key") in LEAGUE_SLUGS else SPORT_SLUGS.get(x["sport"], [])
@@ -731,6 +731,9 @@ def tg_results(now=None):
                 found = read_state(comp, idx)
                 break
         side = pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away)
+        if found:  # score en direct, pour l'onglet En direct
+            x["live"] = {k: found.get(k) for k in ("score", "clock", "state", "start", "reg", "ot") if found.get(k) is not None}
+            dup = True
         if foot and found and found["state"] == "in" and not x.get("two_up") and two_up(side, found["score"], x["sport"]):
             x["two_up"], dup = True, True  # mémorisé (dup : on enregistre le fichier)
         if (not found or found["state"] != "post") and kick and now > kick + GIVE_UP_H * 3600:

@@ -74,6 +74,7 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .wxprep li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
 .wxprep li.done label { opacity: .5; text-decoration: line-through; }
 .btn.wx { background: #e10600; color: #fff; }
+.livehead { margin: 22px 0 10px; font-size: 1.1rem; }
 .reportbtns .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
 .newsline { margin: 4px 0 10px; font-weight: 600; }
 .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: .85rem; }
@@ -1339,12 +1340,27 @@ async function renderLive() {
   box.replaceChildren();
   const list = state.bets.filter(b => b.result === 'pending' || (b.live && b.live.state === 'post' && b.date === (state.today && state.today.date)));
   document.getElementById('livestamp').textContent = 'mis à jour ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  if (!list.length) {
-    box.append(el('div', { class: 'empty' }, el('h2', { text: 'Aucun pari en cours' }),
-      el('p', { text: 'Quand tu enregistres un pari, son score apparaît ici et se met à jour tout seul.' })));
-    return;
-  }
+  if (!list.length) box.append(el('p', { class: 'note', text: 'Aucun pari enregistré en cours. Quand tu enregistres un pari, son score apparaît ici.' }));
   list.forEach(b => box.append(liveCard(b)));
+  try {
+    const pr = (await api('live/pronos')).pronos;
+    if (pr.length) box.append(el('h2', { class: 'livehead', text: '📣 Pronos Tessbet du jour' }), ...pr.map(pronoLiveCard));
+  } catch (_) {}
+}
+
+/* Les pronos Tessbet du jour en direct (même sans pari enregistré). */
+function pronoLiveCard(p) {
+  const [home, away] = (p.match || '').split(/\s+[–-]\s+/);
+  const l = p.live, st = p.status;
+  const stateTxt = !l ? 'Pas commencé' : l.state === 'in' ? null : l.state === 'post' ? 'Terminé' : 'Pas commencé';
+  const tier = { moins_sur: ' · 🤔 moins sûr', outsider: ' · 🎲 outsider', value: ' · 💡 bonne affaire' }[p.tier] || '';
+  return el('div', { class: 'livecard' },
+    el('div', { class: 'lt' }, el('span', { text: `${ball(p)}${whenTxt(startOf(p))}` }),
+      stateTxt ? el('span', { text: stateTxt }) : el('span', { class: 'dot', text: '● EN DIRECT ' + (l.clock || '') })),
+    el('div', { class: 'teams' }, el('span', { text: home || p.match }),
+      el('span', { class: 'score', text: l && l.score ? `${l.score[0]} - ${l.score[1]}` : '– - –' }), el('span', { text: away || '' })),
+    badgeOf(st, l),
+    el('div', { class: 'mine', text: `Prono : ${p.pick}` + (p.odds ? ` – cote ${odds(p.odds)}` : '') + tier }));
 }
 
 /* ---------------- Matchs : parier librement, seul ou en combiné ---------------- */

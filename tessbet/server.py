@@ -841,6 +841,24 @@ def tg_find():
     return 200, {"chats": list(chats.values())}
 
 
+def live_pronos():
+    """Les pronos Tessbet du jour (publiés ou non) avec leur score en direct, pour l'onglet En direct."""
+    import live
+    day = engine.journee(now_utc()).isoformat()
+    out = []
+    for x in read_json(TG_PATH, {}).get("shared") or []:
+        if x.get("date") != day or x.get("tier") == "combo_marker" or x.get("reported") == "doublon":
+            continue
+        lv = x.get("live") or None
+        st = live.bet_status({"match": x["match"], "pick": x["pick"], "pick_team": x.get("pick_team"), "sport": x.get("sport")}, lv) if lv else None
+        if x.get("reported") in ("win", "lose"):
+            st = {"code": "won" if x["reported"] == "win" else "lost", "text": "Gagné" if x["reported"] == "win" else "Perdu"}
+        out.append({k: x.get(k) for k in ("match", "pick", "pick_team", "tier", "sport", "kickoff", "odds", "reported", "score")} | {"live": lv, "status": st})
+    order = {"in": 0, "pre": 1, None: 1, "post": 2}
+    out.sort(key=lambda r: (order.get((r["live"] or {}).get("state"), 1), r.get("kickoff") or "9"))
+    return {"date": day, "pronos": out}
+
+
 def tg_set_chat(body):
     if not body.get("id"):
         return 400, {"error": "Choisis un groupe."}
@@ -1216,6 +1234,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, out)
             if path == "/api/telegram":
                 return self._send(200, tg_status())
+            if path == "/api/live/pronos":
+                return self._send(200, live_pronos())
             if path == "/api/proposals":  # tous les pronos suivis et leur résultat (sans rien envoyer)
                 t = read_json(TG_PATH, {})
                 return self._send(200, {"report": my_report("all"), "items": [{k: x.get(k) for k in ("date", "match", "pick", "tier", "reported", "score", "published", "sport")}
