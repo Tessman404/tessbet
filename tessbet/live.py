@@ -597,6 +597,38 @@ def _combo_backfill(t, recent_day):
     return changed
 
 
+def hockey_regulation_fix(t, now, cache):
+    """Anciens résultats NHL jugés sur le score final : on les rejuge sur les 60 minutes (pari « Résultat » Winamax)."""
+    fixes = []
+    for x in t.get("shared") or []:
+        if (x.get("sport") != "hockey" or x.get("reported") not in ("win", "lose") or x.get("reg_checked")
+                or "prolongation" in (x.get("pick") or "").lower()):
+            continue
+        home, away = split_match(x["match"])
+        day = dt.date.fromisoformat((x.get("kickoff") or x["date"])[:10])
+        try:
+            if ("hockey/nhl", day) not in cache:
+                cache[("hockey/nhl", day)] = fetch_events("hockey/nhl", day)
+        except Exception:
+            continue
+        ev, comp, idx = find_event(cache[("hockey/nhl", day)], home, away, x.get("kickoff"))
+        if not ev:
+            continue
+        st = read_state(dict(comp, hockey=True), idx)
+        x["reg_checked"] = True
+        if st["state"] != "post" or not st.get("reg"):
+            continue
+        side = pick_side({"pick": x["pick"], "pick_team": x.get("pick_team")}, home, away)
+        res = final_result(side, st["reg"])
+        if res == "lose" and x.get("two_up"):
+            res = "win"
+        if res and res != x["reported"]:
+            fixes.append((x, x["reported"], res))
+            x["reported"] = res
+            x["score"] = f"{st['score'][0]}-{st['score'][1]} – {st['reg'][0]}-{st['reg'][1]} à 60 min"
+    return fixes
+
+
 def tg_results(now=None):
     """À la fin de chaque match proposé et partagé, le bot annonce s'il est gagné ou perdu, puis le bilan du jour."""
     now = now or time.time()
@@ -657,7 +689,8 @@ def tg_results(now=None):
         if not found or found["state"] != "post":
             _tg_next[x["id"]] = now + ((90 if foot else 180) if found else 600)  # match en cours : on repasse souvent
             continue
-        res = final_result(side, found["score"])
+        regular = x.get("sport") == "hockey" and found.get("reg") and "prolongation" not in (x.get("pick") or "").lower()
+        res = final_result(side, found["reg"] if regular else found["score"])  # hockey « Résultat » : 60 minutes, nul possible
         if res == "lose" and foot and not x.get("two_up") and max_lead(slug, ev, comp, idx, side) >= LEAD_PAID[x["sport"]][0]:
             x["two_up"] = True  # avance ratée pendant le suivi : retrouvée dans le détail du match
         x["lead_checked"] = True
@@ -668,6 +701,7 @@ def tg_results(now=None):
             x["reported"] = "unknown"
             continue
         sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "") \
+            + (f" – {found['reg'][0]}-{found['reg'][1]} à la fin du temps réglementaire" if regular and found.get("ot") else "") \
             + (f" – {LEAD_PAID[x['sport']][1]} d'avance" if saved else "")
         head = (("🔁 <b>Correction</b> : " if x.get("correction") and x["correction"] != res else "")
                 + ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
@@ -685,6 +719,26 @@ def tg_results(now=None):
         x["reported"] = res
         x["score"] = sc
         sent += 1
+    before = sum(1 for x in shared if x.get("reg_checked"))
+    fixes = hockey_regulation_fix(t, now, cache)
+    if fixes or sum(1 for x in shared if x.get("reg_checked")) != before:
+        dup = True
+    if fixes and send.get("results", True):
+        done_all = [y for y in shared if y.get("reported") in ("win", "lose") and y.get("tier") != "combo_marker"]
+        w_all = sum(y["reported"] == "win" for y in done_all)
+        lines = ["🔁 <b><u>Correction des résultats hockey</u></b>",
+                 "<i>Sur Winamax, le pari « Résultat » au hockey se joue sur 60 minutes : un nul à la fin du temps réglementaire fait perdre, "
+                 "même si l'équipe gagne en prolongation.</i>", ""]
+        for y, old, new in fixes:
+            lines.append(f"{'✅' if new == 'win' else '❌'} {_esc(y['match'])} – {_esc(y['pick'])} ({_esc(y['score'])})")
+        if done_all:
+            lines += ["", f"📈 <b>Total corrigé depuis le début : {w_all}/{len(done_all)} gagnés · ❌ {len(done_all) - w_all} perdus · "
+                          f"{round(w_all * 100 / len(done_all))} %</b>",
+                      "<i>À partir de maintenant, les pronos hockey sont donnés « prolongation incluse » : c'est ce pari-là qu'il faut prendre.</i>"]
+        try:
+            tg_send("\n".join(lines))
+        except Exception as e:
+            print("telegram :", str(e)[:100], file=sys.stderr)
     if _combo_backfill(t, recent_day):
         dup = True
     if combo_results(t, now, cache, send):
