@@ -327,7 +327,10 @@ def explain(c):
 
 
 def pick_label(c):
-    return "Match nul" if c["pick"] == "Draw" else f"Victoire de {c['pick']}"
+    if c["pick"] == "Draw":
+        return "Match nul"
+    # hockey : les cotes analysées sont celles du vainqueur prolongation incluse (pas le « Résultat » en temps réglementaire)
+    return f"Victoire de {c['pick']}" + (" (prolongation incluse)" if c.get("sport") == "hockey" else "")
 
 
 def select(cands, cfg, limit=None):

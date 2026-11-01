@@ -56,7 +56,7 @@ def pick_team(bet):
     if bet.get("pick_team"):
         return bet["pick_team"]
     label = bet.get("pick", "")
-    return None if label.startswith("Match nul") else re.sub(r"^Victoire de ", "", label)
+    return None if label.startswith("Match nul") else re.sub(r"\s*\(.*\)$", "", re.sub(r"^Victoire de ", "", label))
 
 
 def fetch_events(slug, day):
@@ -182,8 +182,19 @@ def read_state(comp, home_idx):
             typ = dict(typ, state="in")  # « fini » trop tôt (sets à égalité, ou aucun vainqueur ni 2 sets gagnés) : on attend
         clock = (f"set {len(games)} : {games[-1]}" + (f" ({' '.join(games[:-1])})" if len(games) > 1 else "")) if typ.get("state") == "in" and games \
             else " ".join(games) + (" (abandon)" if typ.get("name") == "STATUS_RETIRED" else "")
-    return {"state": typ.get("state", "pre"), "name": typ.get("name", ""), "clock": clock,
-            "score": [h, a], "start": comp.get("date") or comp.get("startDate")}
+    out = {"state": typ.get("state", "pre"), "name": typ.get("name", ""), "clock": clock,
+           "score": [h, a], "start": comp.get("date") or comp.get("startDate")}
+    if comp.get("hockey") or any(len(t.get("linescores") or []) > 3 for t in teams):  # hockey : score à la fin du temps réglementaire
+        def reg(t):
+            try:
+                return int(sum(float(x.get("value", 0) or 0) for x in (t.get("linescores") or [])[:3]))
+            except (TypeError, ValueError):
+                return None
+        rh, ra = reg(teams[home_idx]), reg(teams[1 - home_idx])
+        if rh is not None and ra is not None and (teams[home_idx].get("linescores") or []):
+            out["reg"] = [rh, ra]
+            out["ot"] = len(teams[home_idx].get("linescores") or []) > 3
+    return out
 
 
 def last_goal(comp, home_idx):
@@ -321,8 +332,12 @@ def bet_status(bet, lv):
     if side is None:
         return None
     score = lv["score"]
+    regular = (bet.get("sport") == "hockey" and lv.get("reg") and "prolongation" not in (bet.get("pick") or "").lower())
     if lv["state"] == "post":
-        r = final_result(side, score)
+        r = final_result(side, lv["reg"] if regular else score)  # Winamax « Résultat » au hockey : temps réglementaire (nul possible)
+        if r != "win" and regular and lv.get("ot"):
+            return {"code": "lost", "text": "Perdu (nul à la fin du temps réglementaire, pari « Résultat »)"} if not lv.get("two_up") else \
+                {"code": "won", "text": f"Gagné ({lv['two_up'] if isinstance(lv['two_up'], str) else lead_note('hockey')})"}
         if r != "win" and lv.get("two_up"):
             return {"code": "won", "text": f"Gagné ({lv['two_up'] if isinstance(lv['two_up'], str) else lead_note('football')})"}
         return {"code": "won" if r == "win" else "lost", "text": "Gagné" if r == "win" else "Perdu"}
@@ -443,6 +458,7 @@ def tick(now=None):
         if first and "score" not in st:
             st["score"] = cur["score"]
         st["live"] = {"score": cur["score"], "clock": cur["clock"], "state": cur["state"], "start": cur.get("start"),
+                      **({"reg": cur["reg"], "ot": cur.get("ot", False)} if cur.get("reg") else {}),
                       **({"two_up": lead_note(bet["sport"])} if st.get("two_up") else {})}
         if cur["state"] == "post" and st.get("final"):
             st["done"] = True
