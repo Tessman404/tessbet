@@ -1216,6 +1216,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, out)
             if path == "/api/telegram":
                 return self._send(200, tg_status())
+            if path == "/api/proposals":  # tous les pronos suivis et leur résultat (sans rien envoyer)
+                t = read_json(TG_PATH, {})
+                return self._send(200, {"report": my_report("all"), "items": [{k: x.get(k) for k in ("date", "match", "pick", "tier", "reported", "score", "published", "sport")}
+                                                                            for x in t.get("shared", [])]})
             if path == "/api/ha":
                 return self._send(200, ha_payload())
         elif method == "POST":
