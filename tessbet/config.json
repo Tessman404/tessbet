@@ -8,7 +8,7 @@
   "regions": "eu",
   "bookmakers": ["pinnacle", "betfair_ex_eu", "matchbook", "betclic_fr", "winamax_fr", "unibet_fr", "parionssport_fr", "zebet_fr", "pmu_fr", "netbet_fr"],
   "cache_hours": 5,
-  "max_calls_per_sport": {"football": 13, "basketball": 1, "tennis": 4, "hockey": 1},
+  "max_calls_per_sport": {"football": 17, "basketball": 1, "tennis": 4, "hockey": 1, "americanfootball": 1},
 
   "leagues": {
     "football": [
@@ -24,10 +24,15 @@
       "soccer_portugal_primeira_liga",
       "soccer_efl_champ",
       "soccer_belgium_first_div",
-      "soccer_turkey_super_league"
+      "soccer_turkey_super_league",
+      "soccer_uefa_europa_conference_league",
+      "soccer_germany_bundesliga2",
+      "soccer_italy_serie_b",
+      "soccer_spl"
     ],
     "basketball": ["basketball_nba"],
-    "hockey": ["icehockey_nhl"]
+    "hockey": ["icehockey_nhl"],
+    "americanfootball": ["americanfootball_nfl"]
   },
 
   "playable_books": ["winamax"],
@@ -37,7 +42,7 @@
     "max_picks": 3,
     "min_books": 4,
     "min_prob": 0.62,
-    "min_odds": 1.22,
+    "min_odds": 1.15,
     "min_edge": -0.05,
     "exclude_draw": true
   },

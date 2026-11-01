@@ -1070,7 +1070,7 @@ def enrich_football(cands, cfg, env, today, warnings):
 # ---------------------------------------------------------------- récupération des cotes
 def sport_of(key):
     return ("football" if key.startswith("soccer") else "basketball" if key.startswith("basketball")
-            else "hockey" if key.startswith("icehockey") else "tennis")
+            else "hockey" if key.startswith("icehockey") else "americanfootball" if key.startswith("americanfootball") else "tennis")
 
 
 def convert_event(e, key, title):
@@ -1112,7 +1112,7 @@ def cached_events(cfg):
 LIVE_WINDOW = dt.timedelta(hours=3)
 # durée habituelle d'un match : au-delà, il est terminé et sort de la liste
 LIVE_BY_SPORT = {"football": dt.timedelta(minutes=115), "basketball": dt.timedelta(minutes=155), "tennis": dt.timedelta(hours=3),
-                 "hockey": dt.timedelta(minutes=170)}
+                 "hockey": dt.timedelta(minutes=170), "americanfootball": dt.timedelta(minutes=210)}
 
 
 def match_list(events, cfg, now):
@@ -1155,6 +1155,7 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
     keys = [k for k in cfg["leagues"]["football"] if k in active][:caps["football"]]
     keys += [k for k in cfg["leagues"]["basketball"] if k in active][:caps["basketball"]]
     keys += [k for k in cfg["leagues"].get("hockey", []) if k in active][:caps.get("hockey", 1)]
+    keys += [k for k in cfg["leagues"].get("americanfootball", []) if k in active][:caps.get("americanfootball", 1)]
     keys += [k for k in active if k.startswith("tennis_")][:caps["tennis"]]
     paris_now = to_paris(now)
     # fenêtre de 48 h (aujourd'hui + demain) pour le même prix : un appel = un crédit, quel que soit le nombre de matchs

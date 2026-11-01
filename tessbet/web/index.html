@@ -543,12 +543,12 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script>
-const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾', hockey: '🏒' };
+const SPORT = { football: '⚽', basketball: '🏀', tennis: '🎾', hockey: '🏒', americanfootball: '🏈' };
 /* Petit ballon devant chaque match : le sport enregistré, ou deviné d'après le championnat pour les anciennes données. */
 function sportOf(x) {
   if (x.sport && SPORT[x.sport]) return x.sport;
   const t = `${x.league || ''} ${x.league_key || ''}`.toLowerCase();
-  return /basket|nba|euroleague|wnba|ncaab/.test(t) ? 'basketball' : /hockey|nhl/.test(t) ? 'hockey' : /tennis|atp|wta|itf|challenger/.test(t) ? 'tennis' : 'football';
+  return /americanfootball|nfl/.test(t) ? 'americanfootball' : /basket|nba|euroleague|wnba|ncaab/.test(t) ? 'basketball' : /hockey|nhl/.test(t) ? 'hockey' : /tennis|atp|wta|itf|challenger/.test(t) ? 'tennis' : 'football';
 }
 const ball = x => SPORT[sportOf(x)] + ' ';
 /* Match de la nuit (avant 7 h) : il compte dans la journée de la veille. */
@@ -1418,7 +1418,7 @@ function renderMatchList() {
   if (d.mode === 'demo') box.append(el('div', { class: 'banner', text: 'Mode démo : les matchs et les cotes sont fictifs. Ne parie rien d\'après cet écran.' }));
   box.append(el('p', { class: 'summary', text: 'Choisis un résultat pour l\'ajouter à ton ticket, seul ou avec d\'autres en combiné. Les matchs repérés « Proposé par Tessbet » sont ceux que l\'analyse a retenus ; tous les autres sont des paris à ton initiative.' }));
   const pills = el('div', { class: 'pills', role: 'group', 'aria-label': 'Sport' },
-    [['all', 'Tous'], ['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis'], ['hockey', 'Hockey']].filter(([k]) => k === 'all' || count(k))
+    [['all', 'Tous'], ['football', 'Football'], ['basketball', 'Basket'], ['tennis', 'Tennis'], ['hockey', 'Hockey'], ['americanfootball', 'NFL']].filter(([k]) => k === 'all' || count(k))
       .map(([k, t]) => el('button', { class: 'pill' + (s.filter === k ? ' on' : ''), type: 'button', 'aria-pressed': String(s.filter === k), text: `${t} ${count(k)}`,
         onclick: () => { s.filter = k; renderMatchList(); } })));
   box.append(el('div', { class: 'mtools' }, pills, refreshBlock(d)));

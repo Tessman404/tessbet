@@ -20,14 +20,18 @@ LEAGUE_SLUGS = {
     "soccer_uefa_europa_league": "soccer/uefa.europa", "basketball_nba": "basketball/nba",
     "soccer_france_ligue_two": "soccer/fra.2", "soccer_netherlands_eredivisie": "soccer/ned.1", "soccer_portugal_primeira_liga": "soccer/por.1",
     "soccer_efl_champ": "soccer/eng.2", "soccer_belgium_first_div": "soccer/bel.1", "soccer_turkey_super_league": "soccer/tur.1",
-    "icehockey_nhl": "hockey/nhl",
+    "icehockey_nhl": "hockey/nhl", "americanfootball_nfl": "football/nfl",
+    "soccer_uefa_europa_conference_league": "soccer/uefa.europa.conf", "soccer_germany_bundesliga2": "soccer/ger.2",
+    "soccer_italy_serie_b": "soccer/ita.2", "soccer_spl": "soccer/sco.1",
 }
 SPORT_SLUGS = {
     "football": ["soccer/fra.1", "soccer/eng.1", "soccer/esp.1", "soccer/ger.1", "soccer/ita.1",
-                 "soccer/uefa.champions", "soccer/uefa.europa", "soccer/fra.2", "soccer/ned.1", "soccer/por.1", "soccer/eng.2", "soccer/bel.1", "soccer/tur.1"],
+                 "soccer/uefa.champions", "soccer/uefa.europa", "soccer/fra.2", "soccer/ned.1", "soccer/por.1", "soccer/eng.2", "soccer/bel.1", "soccer/tur.1",
+                 "soccer/uefa.europa.conf", "soccer/ger.2", "soccer/ita.2", "soccer/sco.1"],
     "basketball": ["basketball/nba"],
     "tennis": ["tennis/atp", "tennis/wta"],
     "hockey": ["hockey/nhl"],
+    "americanfootball": ["football/nfl"],
 }
 
 
@@ -683,7 +687,7 @@ def tg_results(now=None):
     if not shared:
         return 0
     sent, cache = 0, {}
-    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒"}
+    ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒", "americanfootball": "🏈"}
     send = dict({"results": True, "bilan": True}, **(t.get("send") or {}))
     seen_keys, dup = set(), False
     for x in shared:  # anciens doublons (même match envoyé deux fois) : un seul résultat
