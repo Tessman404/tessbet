@@ -780,7 +780,7 @@ def tg_results(now=None):
         if done_all:
             lines += ["", f"📈 <b>Total corrigé depuis le début : {w_all}/{len(done_all)} gagnés · ❌ {len(done_all) - w_all} perdus · "
                           f"{round(w_all * 100 / len(done_all))} %</b>",
-                      "<i>À partir de maintenant, les pronos hockey sont donnés « prolongation incluse » : c'est ce pari-là qu'il faut prendre.</i>"]
+                      "<i>À partir de maintenant, les pronos hockey sont donnés pour le pari « Résultat » (60 minutes) avec des chances recalculées en tenant compte du nul.</i>"]
         try:
             tg_send("\n".join(lines))
         except Exception as e:

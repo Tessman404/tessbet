@@ -212,6 +212,16 @@ def is_playable(key, playable):
     return base in playable
 
 
+NHL_TIE_RATE = 0.23  # part des matchs NHL à égalité après 60 minutes (prolongation / tirs au but)
+
+
+def regulation_prob(p):
+    """Chances de gagner DANS LE TEMPS RÉGLEMENTAIRE, à partir des chances de gagner prolongation incluse.
+    Environ 23 % des matchs sont à égalité après 60 min ; en prolongation le favori n'a qu'un léger avantage."""
+    ot_share = 0.5 + (p - 0.5) * 0.3  # part des prolongations gagnées par cette équipe
+    return max(0.01, p - NHL_TIE_RATE * ot_share)
+
+
 def analyse_event(ev, cfg):
     """Retourne un candidat par issue (hors nul si exclu) avec probabilité estimée et meilleure cote."""
     sharp = cfg.get("sharp_books", {})
@@ -233,6 +243,8 @@ def analyse_event(ev, cfg):
         if n == "Draw" and cfg["selection"].get("exclude_draw", True):
             continue
         fair = sum(w * v for w, v in zip(weights, probs[n])) / wsum
+        if ev["sport"] == "hockey":  # Thomas joue le « Résultat » (60 min) : le nul fait perdre
+            fair = regulation_prob(fair)
         disp = pstdev(probs[n]) if len(probs[n]) > 1 else 0.0
         agree = 0
         for i in range(len(books)):
@@ -329,8 +341,8 @@ def explain(c):
 def pick_label(c):
     if c["pick"] == "Draw":
         return "Match nul"
-    # hockey : les cotes analysées sont celles du vainqueur prolongation incluse (pas le « Résultat » en temps réglementaire)
-    return f"Victoire de {c['pick']}" + (" (prolongation incluse)" if c.get("sport") == "hockey" else "")
+    # hockey : pari « Résultat » Winamax, jugé à la fin des 60 minutes (un nul fait perdre)
+    return f"Victoire de {c['pick']}" + (" (Résultat, 60 min)" if c.get("sport") == "hockey" else "")
 
 
 def select(cands, cfg, limit=None):
