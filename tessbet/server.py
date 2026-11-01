@@ -351,6 +351,40 @@ def add_bet(body):
         return 200, {"bet": bet}
 
 
+def auto_settle(now=None):
+    """Mes mises se mettent à jour toutes seules : dès qu'un match est fini, le pari (ou le match du combiné) passe gagné ou perdu."""
+    import live
+    lvs = read_json(os.path.join(DATA, "live.json"), {})
+    stamp = (now or now_utc()).strftime("%Y-%m-%dT%H:%M:%SZ")
+    changed = 0
+    with LOCK:
+        d = load_bets()
+        for b in d["bets"]:
+            if b.get("result") != "pending" or b.get("cashout"):
+                continue
+            if not b.get("legs"):
+                lv = (lvs.get(b["id"]) or {}).get("live") or {}
+                st = live.bet_status(b, lv) if lv.get("state") == "post" else None
+                if st and st["code"] in ("won", "lost"):
+                    b["result"], b["settled_at"], b["auto"] = ("win" if st["code"] == "won" else "lose"), stamp, True
+                    changed += 1
+                continue
+            for i, leg in enumerate(b["legs"]):
+                if leg.get("result", "pending") != "pending":
+                    continue
+                lv = (lvs.get(f"{b['id']}:{i}") or {}).get("live") or {}
+                st = live.bet_status(leg, lv) if lv.get("state") == "post" else None
+                if st and st["code"] in ("won", "lost"):
+                    leg["result"], leg["auto"] = ("win" if st["code"] == "won" else "lose"), True
+                    changed += 1
+            res = combo_result(b["legs"])
+            if res != "pending":
+                b["result"], b["settled_at"], b["auto"] = res, stamp, True
+        if changed:
+            engine.write_json(BETS_PATH, d)
+    return changed
+
+
 def set_result(bet_id, result):
     if result not in ("win", "lose", "void", "pending"):
         return 400, {"error": "Résultat inconnu."}
@@ -810,7 +844,9 @@ def tg_find():
 def tg_set_chat(body):
     if not body.get("id"):
         return 400, {"error": "Choisis un groupe."}
-    engine.write_json(TG_PATH, {"chat": {"id": body["id"], "title": str(body.get("title", ""))[:80]}})
+    t = read_json(TG_PATH, {})  # on garde l'historique des pronos partagés
+    t["chat"] = {"id": body["id"], "title": str(body.get("title", ""))[:80]}
+    engine.write_json(TG_PATH, t)
     return 200, tg_status()
 
 

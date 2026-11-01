@@ -366,11 +366,11 @@ def messages(bet, home, away, cur, st, sport, first):
         out.append(("ht", f"⏸️ Mi-temps : {line}", f"Ton pari « {pick} » : {pick_status(side, sc)}."))
     if cur["state"] == "post" and not st.get("final"):
         res = final_result(side, sc)
-        verdict = {"win": "semble GAGNÉ ✅", "lose": "semble PERDU ❌"}.get(res, "est terminé")
+        verdict = {"win": "est GAGNÉ ✅", "lose": "est PERDU ❌"}.get(res, "est terminé")
         if res != "win" and st.get("two_up"):
             verdict = f"est GAGNÉ ✅ ({lead_note(sport)}, même si l'adversaire est revenu)"
         out.append(("final", f"🏁 Terminé : {line}",
-                    f"Ton pari « {pick} » {verdict}. Confirme dans Tessbet pour mettre ton argent à jour."))
+                    f"Ton pari « {pick} » {verdict}. Tessbet le note tout seul dans Mes mises."))
     return out
 
 
@@ -778,6 +778,11 @@ def run_loop():
                 wait = 30 if any(s.get("live", {}).get("state") == "in" for s in state.values()) else 60
         except Exception as e:  # le suivi ne doit jamais s'arrêter
             print("suivi direct :", e, file=sys.stderr)
+        try:
+            import server  # Mes mises : résultat mis à jour tout seul à la fin de chaque match
+            server.auto_settle()
+        except Exception as e:
+            print("résultats automatiques :", str(e)[:100], file=sys.stderr)
         try:
             publish()
         except Exception as e:
