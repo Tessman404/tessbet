@@ -1720,7 +1720,11 @@ function tgPanel() {
       });
       return el('label', { class: 'switch' }, cb, el('span', { class: 'knob', 'aria-hidden': 'true' }), el('span', { text: t }));
     }));
-    body.append(el('div', { class: 'btns' }, find, test), list, toggles, follow,
+    const addBox = el('div', { class: 'tgsend' }, el('p', { class: 'sl', text: '📥 Ajouter un pari Winamax en l\'envoyant au bot' }));
+    api('telegram/link').then(l => addBox.append(l.linked
+      ? el('p', { class: 'note', text: '✅ Relié. Envoie au bot, en privé, le texte d\'un pari Winamax (avec le raccourci iPhone « Ajouter à Tessbet ») : il est ajouté dans Mes mises. Pour annuler : /annuler suivi du code donné par le bot.' })
+      : el('p', { class: 'note' }, 'Pour relier ton compte : ouvre la conversation privée avec ton bot dans Telegram et envoie ', el('b', { text: '/lier ' + l.code }), '. Ensuite, chaque texte de pari envoyé au bot est ajouté dans Mes mises.'))).catch(() => {});
+    body.append(el('div', { class: 'btns' }, find, test), list, toggles, addBox, follow,
       el('p', { class: 'note', text: 'Le bouton « Envoyer les pronos sur Telegram » apparaît dans Aujourd\'hui dès que l\'analyse est faite.' }));
   };
   draw();

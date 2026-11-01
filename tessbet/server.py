@@ -798,7 +798,7 @@ def tg_find():
         ups = tg_call("getUpdates", {"limit": 100}) or []
     except Exception as e:
         return 400, {"error": str(e)}
-    chats = {}
+    chats = {c["id"]: c for c in read_json(TG_PATH, {}).get("seen_chats", []) if c.get("type") != "private"}
     for u in ups:
         for k in ("message", "my_chat_member", "channel_post", "edited_message"):
             c = (u.get(k) or {}).get("chat")
@@ -807,10 +807,177 @@ def tg_find():
     return 200, {"chats": list(chats.values())}
 
 
+# ---------------------------------------------------------------- ajout d'un pari en l'envoyant au bot en privé
+_NUM = r"(\d+(?:[.,]\d+)?)"
+
+
+def _num(x):
+    return float(x.replace(",", "."))
+
+
+def parse_bet_text(text):
+    """Lit le texte d'un ticket Winamax (copié depuis la page du pari). Renvoie {legs, odds, stake, boost} ou None."""
+    lines = [l.strip() for l in str(text).replace("\u00a0", " ").splitlines() if l.strip()]
+    flat = "\n".join(lines)
+    m = re.search(r"Mise\s*:?\s*\n?\s*" + _NUM + r"\s*€", flat, re.I)
+    if not m:
+        return None
+    stake = _num(m.group(1))
+    tot = re.search(r"Cote totale\s*:?\s*\n?\s*" + _NUM, flat, re.I)
+    boost = re.search(r"(\d+(?:[.,]\d+)?)\s*%", flat) if re.search(r"booster|boost", flat, re.I) else None
+    legs = []
+    skip = re.compile(r"^(\d{1,2}[:h]\d{2}|\d{1,2}/\d{1,2}|Dem\.?|Auj\.?|En cours|Gagné|Perdu|Simple|Combiné.*|Set \d.*|\d+|-|–|Cashout.*|Compléter|Réf.*)$", re.I)
+    for i, l in enumerate(lines):
+        pm = re.match(r"^(Résultat|Vainqueur|Victoire de|Victoire)\s*:?\s+(.+)$", l, re.I)
+        if not pm:
+            continue
+        team = pm.group(2).strip()
+        odd = None
+        for nxt in lines[i + 1:i + 3]:
+            om = re.fullmatch(_NUM, nxt)
+            if om and 1 < _num(om.group(1)) < 1000:
+                odd = _num(om.group(1)); break
+        names = []
+        for prev in reversed(lines[max(0, i - 8):i]):
+            if re.match(r"^(Résultat|Vainqueur|Victoire)", prev, re.I) or re.fullmatch(r"\d+[.,]\d+", prev):
+                break  # on est remonté jusqu'au match précédent
+            if not skip.match(prev):
+                names.insert(0, re.sub(r"\s*\d{1,2}[:h]\d{2}\s*", " – ", prev).strip(" -"))
+        match = " – ".join(names[-2:]) if len(names) >= 2 else (names[0] if names else team)
+        for full in re.split(r"\s+–\s+", match):  # « T. Fritz » -> « Taylor Fritz » (nom complet du match)
+            if full.split() and team.split() and full.split()[-1].lower() == team.split()[-1].lower():
+                team = full
+        if odd:
+            legs.append({"match": match[:120], "pick": f"Victoire de {team}"[:120], "pick_team": team, "odds": odd})
+    if not legs:
+        return None
+    odds = _num(tot.group(1)) if tot else (legs[0]["odds"] if len(legs) == 1 else round(math.prod(l["odds"] for l in legs), 2))
+    return {"legs": legs, "odds": odds, "stake": stake, "boost": _num(boost.group(1)) if boost else 0}
+
+
+def parse_bet_claude(text):
+    """Si la lecture simple échoue : Claude lit le texte (clé API Claude nécessaire, quelques dixièmes de centime)."""
+    key = engine.load_env().get("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    prompt = ("Voici le texte copié d'un pari Winamax. Réponds UNIQUEMENT avec un JSON : "
+              '{"legs":[{"match":"Equipe A – Equipe B","pick_team":"équipe choisie","odds":1.5}],"odds":cote_totale,"stake":mise_euros,"boost":pourcentage_ou_0}. '
+              "Si ce n'est pas un pari, réponds {}.\n\n" + str(text)[:6000])
+    try:
+        r = engine.anthropic_post({"model": engine.load_config()["claude"]["model"], "max_tokens": 800,
+                                   "messages": [{"role": "user", "content": prompt}]}, key)
+        raw = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
+        d = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
+    except Exception:
+        return None
+    if not d.get("legs") or not d.get("stake"):
+        return None
+    for l in d["legs"]:
+        l["pick"] = f"Victoire de {l.get('pick_team', '')}"
+    return d
+
+
+def import_bet_text(text):
+    """Ajoute dans Mes mises le pari décrit par le texte. Renvoie (ok, message pour Telegram)."""
+    p = parse_bet_text(text) or parse_bet_claude(text)
+    if not p:
+        return False, "Je n'ai pas reconnu de pari dans ce message (il me faut au moins le pari, la cote et la mise)."
+    legs = [_enrich_leg(l) for l in p["legs"]]
+    body = {"stake": p["stake"], "odds": p["odds"], "book": "winamax", "boost": p.get("boost") or 0, "force": True}
+    if len(legs) >= 2:
+        body["legs"] = legs
+    else:
+        body.update({k: legs[0][k] for k in ("match", "pick", "pick_team", "sport", "league_key", "kickoff") if legs[0].get(k)})
+    code, res = add_bet(body)
+    if code != 200:
+        return False, "Pari pas ajouté : " + res.get("error", "erreur")
+    b = res["bet"]
+    detail = "\n".join(f"• {l['match']} – {l['pick']} @ {engine.fr(l['odds'], 2)}" for l in legs)
+    return True, (f"✅ Pari ajouté dans Tessbet\n{detail}\nCote {engine.fr(b['odds'], 2)} · mise {_eur(b['stake'])}"
+                  + (f" · boost {engine.fr(b['boost'], 1)} %" if b.get("boost") else "") + f"\nPour l'annuler : /annuler {b['id']}")
+
+
+def _enrich_leg(leg):
+    """Retrouve le match dans les cotes en mémoire : vrai nom des équipes, sport, ligue et heure (pour le suivi en direct)."""
+    try:
+        events, _ = engine.cached_events(engine.load_config())
+    except Exception:
+        events = []
+    last = lambda n: (n or "").split()[-1].lower() if (n or "").split() else ""
+    want = {last(x) for x in re.split(r"\s+–\s+", leg["match"])} | {last(leg.get("pick_team"))}
+    for e in events:
+        if {last(e["home"]), last(e["away"])} & want and last(leg.get("pick_team")) in (last(e["home"]), last(e["away"])):
+            team = e["home"] if last(e["home"]) == last(leg["pick_team"]) else e["away"]
+            return dict(leg, match=f"{e['home']} – {e['away']}", pick=f"Victoire de {team}", pick_team=team, sport=e.get("sport", "football"),
+                        league_key=e.get("league_key", ""), kickoff=e.get("commence"))
+    return dict(leg, sport=leg.get("sport") or "football")
+
+
+def tg_inbox_loop():
+    """Lit les messages envoyés au bot EN PRIVÉ par Thomas : un texte de pari Winamax -> ajouté dans Mes mises."""
+    while True:
+        try:
+            tg_inbox_once()
+        except Exception as e:
+            print("telegram (réception) :", str(e)[:120], file=sys.stderr)
+        time.sleep(20)
+
+
+def tg_inbox_once():
+    if not engine.load_env().get("TELEGRAM_TOKEN"):
+        return
+    t = read_json(TG_PATH, {})
+    ups = tg_call("getUpdates", {"offset": t.get("upd_offset", 0), "limit": 50, "timeout": 0}) or []
+    if not ups:
+        return
+    seen = {c["id"]: c for c in t.get("seen_chats", [])}
+    for u in ups:
+        t["upd_offset"] = u["update_id"] + 1
+        msg = u.get("message") or {}
+        chat = msg.get("chat") or (u.get("my_chat_member") or {}).get("chat")
+        if chat:
+            seen[chat["id"]] = {"id": chat["id"], "title": chat.get("title") or chat.get("first_name") or str(chat["id"]), "type": chat.get("type")}
+        if not msg or (msg.get("chat") or {}).get("type") != "private":
+            continue
+        cid, text = msg["chat"]["id"], (msg.get("text") or "").strip()
+        owner = t.get("owner")
+        code = t.get("link_code")
+        if text.lower().startswith("/lier"):
+            if code and code in text.upper():
+                t["owner"], owner = cid, cid
+                tg_call("sendMessage", {"chat_id": cid, "text": "🔗 C'est relié : envoie-moi le texte d'un pari Winamax et je l'ajoute dans Tessbet."})
+            else:
+                tg_call("sendMessage", {"chat_id": cid, "text": "Code incorrect. Le bon code est dans Tessbet > Réglages > Telegram."})
+            continue
+        if cid != owner:
+            continue  # personne d'autre que Thomas ne peut ajouter de pari
+        if text.lower().startswith("/annuler"):
+            bid = text.split()[-1]
+            c, _ = delete_bet(bid)
+            tg_call("sendMessage", {"chat_id": cid, "text": "🗑️ Pari retiré de Tessbet." if c == 200 else "Pari introuvable."})
+            continue
+        ok, reply = import_bet_text(text)
+        tg_call("sendMessage", {"chat_id": cid, "text": reply})
+    t["seen_chats"] = list(seen.values())[-30:]
+    cur = read_json(TG_PATH, {})  # on ne garde que nos champs : le reste a pu changer entre-temps
+    cur.update({k: t[k] for k in ("upd_offset", "seen_chats", "owner") if k in t})
+    engine.write_json(TG_PATH, cur)
+
+
+def tg_link_code():
+    t = read_json(TG_PATH, {})
+    if not t.get("link_code"):
+        t["link_code"] = "TB" + uuid.uuid4().hex[:4].upper()
+        engine.write_json(TG_PATH, t)
+    return {"code": t["link_code"], "linked": bool(t.get("owner"))}
+
+
 def tg_set_chat(body):
     if not body.get("id"):
         return 400, {"error": "Choisis un groupe."}
-    engine.write_json(TG_PATH, {"chat": {"id": body["id"], "title": str(body.get("title", ""))[:80]}})
+    t = read_json(TG_PATH, {})
+    t["chat"] = {"id": body["id"], "title": str(body.get("title", ""))[:80]}
+    engine.write_json(TG_PATH, t)
     return 200, tg_status()
 
 
@@ -1175,6 +1342,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, out)
             if path == "/api/telegram":
                 return self._send(200, tg_status())
+            if path == "/api/telegram/link":
+                return self._send(200, tg_link_code())
             if path == "/api/ha":
                 return self._send(200, ha_payload())
         elif method == "POST":
@@ -1245,6 +1414,7 @@ def main():
     cfg = engine.load_config()
     port = int(os.environ.get("PORT", cfg.get("port", 8099)))
     threading.Thread(target=scheduler, daemon=True).start()
+    threading.Thread(target=tg_inbox_loop, daemon=True).start()
     import live  # suivi des buts en direct
     threading.Thread(target=live.run_loop, daemon=True).start()
     print(f"Paris du jour : http://0.0.0.0:{port}  (mode {cfg.get('mode')})")
