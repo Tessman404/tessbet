@@ -1030,7 +1030,7 @@ def tg_share(body):
     else:
         # on n'envoie que ce qui n'a pas encore été partagé (une nouvelle analyse peut ajouter des matchs)
         t0 = read_json(TG_PATH, {})
-        done = {(x["date"], x["match"], x["pick"]) for x in t0.get("shared", [])}  # un match déjà envoyé ne repart pas, même s'il change de catégorie
+        done = {(x["date"], x["match"], x["pick"]) for x in t0.get("shared", []) if x.get("published", True)}  # un match déjà envoyé ne repart pas, même s'il change de catégorie
         fresh = []
         for d in days:
             sel = [s for s in d.get("selections", []) if (d["date"], s["match"], s["pick_label"]) not in done]
@@ -1039,7 +1039,7 @@ def tg_share(body):
             cb = d.get("combo") if d.get("combo") and (d["date"], "combo:" + "+".join(l["match"] for l in d["combo"]["legs"]), "") not in done else None
             if sel or near or cb or drop:
                 fresh.append(dict(d, selections=sel, near=near, combo=cb, claude_dropped_items=drop))
-        already = any(x["date"] in {d["date"] for d in days} for x in t0.get("shared", []))
+        already = any(x["date"] in {d["date"] for d in days} for x in t0.get("shared", []) if x.get("published", True))
         if body.get("all") or not already:
             text = share_text(days)
         elif not fresh:
@@ -1058,9 +1058,10 @@ def tg_share(body):
         for d in days:
             for s in d.get("selections", []):
                 k = (d["date"], s["match"], s["pick_label"])
-                if k in shared:  # déjà envoyé comme « moins sûr » et devenu prono : on le compte comme prono, sans le renvoyer
+                if k in shared:  # déjà suivi (ou envoyé comme « moins sûr ») : on le compte comme prono, publié
                     if shared[k].get("tier") == "moins_sur":
                         shared[k]["tier"] = s.get("tier", "fiable")
+                    shared[k]["published"] = True
                     continue
                 shared[k] = {"id": s["id"], "date": d["date"], "match": s["match"], "pick": s["pick_label"],
                              "pick_team": s.get("pick_team"), "sport": s["sport"], "league_key": s.get("league_key", ""),
@@ -1068,13 +1069,17 @@ def tg_share(body):
             for n in (d.get("claude_dropped_items") or []) + (d.get("near") or []):  # les « moins sûrs » sont suivis aussi, à part
                 nid = n.get("id") or "n" + hashlib.md5((d["date"] + n["match"] + n["pick_label"]).encode()).hexdigest()[:9]
                 k = (d["date"], n["match"], n["pick_label"])
-                if k not in shared:
+                if k in shared:
+                    shared[k]["published"] = True
+                else:
                     shared[k] = {"id": nid, "date": d["date"], "match": n["match"], "pick": re.sub(r" \((bonne affaire|outsider)\)$", "", n["pick_label"]),
                                  "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
                                  "kickoff": n.get("kickoff"), "odds": n.get("odds"), "tier": "moins_sur", "reported": None}
             if d.get("combo"):  # repère pour ne pas renvoyer le même combiné, et suivre son résultat
                 cm = "combo:" + "+".join(l["match"] for l in d["combo"]["legs"])
                 cid = "c" + hashlib.md5((d["date"] + cm).encode()).hexdigest()[:9]
+                if (d["date"], cm, "") in shared:
+                    shared[(d["date"], cm, "")]["published"] = True
                 shared.setdefault((d["date"], cm, ""), {"id": cid, "date": d["date"], "match": cm, "pick": "", "tier": "combo_marker", "reported": None,
                                                         "odds": d["combo"].get("total_odds"),
                                                         "legs": [{k: l.get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")}

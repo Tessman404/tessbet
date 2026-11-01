@@ -557,7 +557,7 @@ def combo_results(t, now, cache, send):
         if lost:
             lines.append(f"<i>Perdu à cause de : {', '.join(_esc(l.get('pick_team') or l['match']) for l in lost)}.</i>")
         try:
-            if send.get("results", True):
+            if send.get("results", True) and x.get("published", True):
                 tg_send("\n".join(lines))
         except Exception as e:
             print("telegram :", str(e)[:100], file=sys.stderr)
@@ -627,6 +627,52 @@ def hockey_regulation_fix(t, now, cache):
             x["reported"] = res
             x["score"] = f"{st['score'][0]}-{st['score'][1]} – {st['reg'][0]}-{st['reg'][1]} à 60 min"
     return fixes
+
+
+def sync_proposals():
+    """Tout ce que Tessbet propose (publié sur Telegram ou non) est suivi : pronos, moins sûrs, combiné.
+    Les résultats ne partent sur Telegram que pour ce qui a été publié ; les bilans comptent tout."""
+    import hashlib, glob
+    t = _read("telegram.json", {})
+    shared = t.setdefault("shared", [])
+    have = {(x.get("date"), x.get("match"), x.get("pick")) for x in shared}
+    mode = engine.load_config().get("mode", "live")
+    files = sorted(glob.glob(os.path.join(engine.DATA, "history", "*.json"))) if mode != "demo" else []
+    added = 0
+    for f in files:
+        day = os.path.basename(f)[:10]
+        if day < "2026-10-24":
+            continue
+        try:
+            with open(f, encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if d.get("waiting") or d.get("date") != day:
+            continue
+        rows = [(s, s.get("tier", "fiable"), s["pick_label"]) for s in d.get("selections") or []]
+        rows += [(n, "moins_sur", re.sub(r" \((bonne affaire|outsider)\)$", "", n["pick_label"])) for n in d.get("near") or []]
+        for x, tier, pick in rows:
+            k = (day, x["match"], pick)
+            if k in have:
+                continue
+            have.add(k)
+            shared.append({"id": "p" + hashlib.md5((day + x["match"] + pick).encode()).hexdigest()[:9], "date": day, "match": x["match"],
+                           "pick": pick, "pick_team": x.get("pick_team"), "sport": x.get("sport") or "football", "league_key": x.get("league_key", ""),
+                           "kickoff": x.get("kickoff"), "odds": x.get("odds"), "tier": tier, "reported": None, "published": False})
+            added += 1
+        cb = d.get("combo")
+        if cb and cb.get("legs"):
+            cm = "combo:" + "+".join(l["match"] for l in cb["legs"])
+            if (day, cm, "") not in have:
+                have.add((day, cm, ""))
+                shared.append({"id": "c" + hashlib.md5((day + cm).encode()).hexdigest()[:9], "date": day, "match": cm, "pick": "",
+                               "tier": "combo_marker", "reported": None, "published": False, "odds": cb.get("total_odds"),
+                               "legs": [{k: l.get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")} for l in cb["legs"]]})
+                added += 1
+    if added:
+        engine.write_json(_path("telegram.json"), t)
+    return added
 
 
 def tg_results(now=None):
@@ -707,7 +753,7 @@ def tg_results(now=None):
                 + ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
                 + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else ""))
         try:
-            if send["results"] and x.get("correction") != res:  # correction : on ne renvoie que si le résultat change
+            if send["results"] and x.get("correction") != res and x.get("published", True):  # correction : seulement si ça change
                 tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} {(' @ ' + engine.fr(x['odds'], 2)) if x.get('odds') else ''}"
                     + (" (bonne affaire)" if x.get("tier") == "value" else "")
                     + (f"\n<i>{_esc(x['pick'].replace('Victoire de ', ''))} a mené de {LEAD_PAID[x['sport']][1]} : pari payé par Winamax, même si l'adversaire est revenu.</i>" if saved else ""))
@@ -729,7 +775,7 @@ def tg_results(now=None):
         lines = ["🔁 <b><u>Correction des résultats hockey</u></b>",
                  "<i>Sur Winamax, le pari « Résultat » au hockey se joue sur 60 minutes : un nul à la fin du temps réglementaire fait perdre, "
                  "même si l'équipe gagne en prolongation.</i>", ""]
-        for y, old, new in fixes:
+        for y, old, new in [f for f in fixes if f[0].get("published", True)] or fixes:
             lines.append(f"{'✅' if new == 'win' else '❌'} {_esc(y['match'])} – {_esc(y['pick'])} ({_esc(y['score'])})")
         if done_all:
             lines += ["", f"📈 <b>Total corrigé depuis le début : {w_all}/{len(done_all)} gagnés · ❌ {len(done_all) - w_all} perdus · "
@@ -857,6 +903,10 @@ def run_loop():
             publish()
         except Exception as e:
             print("tuile en direct :", str(e)[:100], file=sys.stderr)
+        try:
+            sync_proposals()
+        except Exception as e:
+            print("suivi des pronos :", str(e)[:100], file=sys.stderr)
         try:
             tg_results()
         except Exception as e:
