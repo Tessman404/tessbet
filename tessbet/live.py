@@ -492,8 +492,9 @@ def leg_outcome(leg, now, cache):
     home, away = split_match(leg.get("match"))
     if not home:
         return "unknown", ""
-    sport = leg.get("sport") or "football"
-    slugs = [LEAGUE_SLUGS[leg["league_key"]]] if leg.get("league_key") in LEAGUE_SLUGS else SPORT_SLUGS.get(sport, [])
+    sport = leg.get("sport")
+    slugs = ([LEAGUE_SLUGS[leg["league_key"]]] if leg.get("league_key") in LEAGUE_SLUGS
+             else SPORT_SLUGS.get(sport) or [x for v in SPORT_SLUGS.values() for x in v])  # sport inconnu : on cherche partout
     day = dt.date.fromisoformat((leg.get("kickoff") or "")[:10] or engine.paris_date().isoformat())
     for slug in slugs:
         try:
@@ -568,6 +569,12 @@ def _combo_backfill(t, recent_day):
             if y.get("date") == x["date"] and y.get("tier") != "combo_marker":
                 pool.setdefault(y["match"], dict(y, pick_label=y.get("pick")))
         names = x["match"][len("combo:"):].split("+")
+        known = sum(n in pool for n in names)
+        for n in names:  # match introuvable (analyse remplacée depuis) : le combiné ne prend que des favoris, cités en premier
+            h, a = split_match(n)
+            if n not in pool and h and known >= len(names) - 1:
+                pool[n] = {"match": n, "pick_label": f"Victoire de {h}", "pick_team": h, "sport": None,
+                           "kickoff": f"{x['date']}T12:00:00Z"}
         if names and all(n in pool for n in names):
             x["legs"] = [{k: pool[n].get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")} for n in names]
             x["reported"], x["late"], changed = None, True, True
