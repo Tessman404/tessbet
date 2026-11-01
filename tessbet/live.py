@@ -481,6 +481,92 @@ _tg_next = {}
 GIVE_UP_H = 6  # heures après le début : au-delà, un match sans résultat est compté « introuvable »
 
 
+def leg_outcome(leg, now, cache):
+    """Résultat d'un match d'un combiné partagé : "win", "lose", "unknown" (introuvable) ou None (pas encore fini)."""
+    try:
+        kick = dt.datetime.fromisoformat(leg["kickoff"].replace("Z", "+00:00")).timestamp()
+    except Exception:
+        kick = 0
+    if kick and now < kick + 80 * 60:
+        return None, ""
+    home, away = split_match(leg.get("match"))
+    if not home:
+        return "unknown", ""
+    sport = leg.get("sport") or "football"
+    slugs = [LEAGUE_SLUGS[leg["league_key"]]] if leg.get("league_key") in LEAGUE_SLUGS else SPORT_SLUGS.get(sport, [])
+    day = dt.date.fromisoformat((leg.get("kickoff") or "")[:10] or engine.paris_date().isoformat())
+    for slug in slugs:
+        try:
+            if (slug, day) not in cache:
+                cache[(slug, day)] = fetch_events(slug, day)
+        except Exception:
+            continue
+        ev, comp, idx = find_event(cache[(slug, day)], home, away, leg.get("kickoff"))
+        if not ev:
+            continue
+        st = read_state(comp, idx)
+        if st["state"] != "post":
+            return ("unknown", "") if kick and now > kick + GIVE_UP_H * 3600 else (None, "")
+        side = pick_side({"pick": leg.get("pick_label") or leg.get("pick"), "pick_team": leg.get("pick_team")}, home, away)
+        res = final_result(side, st["score"])
+        if res == "lose" and sport in LEAD_PAID and max_lead(slug, ev, comp, idx, side) >= LEAD_PAID[sport][0]:
+            res = "win"  # garantie Winamax (avance de 2 buts / 20 points / 3 buts)
+        return res or "unknown", f"{st['score'][0]}-{st['score'][1]}"
+    return ("unknown", "") if kick and now > kick + GIVE_UP_H * 3600 else (None, "")
+
+
+def combo_results(t, now, cache, send):
+    """Combinés du jour partagés sur Telegram : perdu dès qu'un match est perdu, gagné quand tous sont gagnés."""
+    changed = False
+    for x in t.get("shared") or []:
+        if x.get("tier") != "combo_marker" or x.get("reported") or not x.get("legs"):
+            continue
+        for leg in x["legs"]:
+            if leg.get("res") in ("win", "lose", "unknown"):
+                continue
+            r, sc = leg_outcome(leg, now, cache)
+            if r:
+                leg["res"], leg["score"], changed = r, sc, True
+        rs = [l.get("res") for l in x["legs"]]
+        res = "lose" if "lose" in rs else "win" if all(r == "win" for r in rs) else "unknown" if all(r for r in rs) else None
+        if not res:
+            continue
+        lost = [l for l in x["legs"] if l.get("res") == "lose"]
+        lines = [("✅ <b>COMBINÉ GAGNÉ</b>" if res == "win" else "❌ <b>COMBINÉ PERDU</b>" if res == "lose" else "❔ <b>Combiné : résultat incomplet</b>")
+                 + (f" @ {engine.fr(x['odds'], 2)}" if x.get("odds") else "") + f" – combiné du {x['date'][8:10]}/{x['date'][5:7]}"]
+        for l in x["legs"]:
+            mark = {"win": "✅", "lose": "❌", "unknown": "❔"}.get(l.get("res"), "⏳")
+            lines.append(f"{mark} {_esc(l['match'])} – {_esc(l.get('pick_label') or l.get('pick', ''))}" + (f" ({l['score']})" if l.get("score") else ""))
+        if lost:
+            lines.append(f"<i>Perdu à cause de : {', '.join(_esc(l.get('pick_team') or l['match']) for l in lost)}.</i>")
+        try:
+            if send.get("results", True):
+                tg_send("\n".join(lines))
+        except Exception as e:
+            print("telegram :", str(e)[:100], file=sys.stderr)
+            continue
+        x["reported"], changed = res, True
+    return changed
+
+
+def _combo_backfill(t, recent_day):
+    """Anciens repères de combiné (sans détail) : on retrouve les matchs dans l'analyse du jour pour suivre le résultat."""
+    changed = False
+    mode = engine.load_config().get("mode", "live")
+    for x in t.get("shared") or []:
+        if x.get("tier") != "combo_marker" or x.get("reported") != "skip" or x.get("date", "") < recent_day or x.get("legs"):
+            continue
+        try:
+            with open(engine.result_path(mode, x["date"]), encoding="utf-8") as f:
+                cb = (json.load(f) or {}).get("combo") or {}
+        except (OSError, ValueError):
+            cb = {}
+        if cb.get("legs") and x["match"] == "combo:" + "+".join(l["match"] for l in cb["legs"]):
+            x["legs"] = [{k: l.get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")} for l in cb["legs"]]
+            x["odds"], x["reported"], x["late"], changed = cb.get("total_odds"), None, True, True
+    return changed
+
+
 def tg_results(now=None):
     """À la fin de chaque match proposé et partagé, le bot annonce s'il est gagné ou perdu, puis le bilan du jour."""
     now = now or time.time()
@@ -569,11 +655,16 @@ def tg_results(now=None):
         x["reported"] = res
         x["score"] = sc
         sent += 1
+    if _combo_backfill(t, recent_day):
+        dup = True
+    if combo_results(t, now, cache, send):
+        dup = True
     recent = (engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc)).date() - dt.timedelta(days=1)).isoformat()  # jamais de vieux bilans renvoyés
     for bday in sorted({y["date"] for y in shared if y["date"] >= recent}):  # bilan d'un jour : quand tous ses matchs ont un résultat
         x = {"date": bday}
         day_picks = [y for y in shared if y["date"] == x["date"] and y.get("tier") != "combo_marker" and y.get("reported") != "doublon"]
-        if send["bilan"] and all(y.get("reported") for y in day_picks) and x["date"] not in t.get("bilans", []):
+        combos = [y for y in shared if y["date"] == x["date"] and y.get("tier") == "combo_marker" and y.get("legs")]
+        if send["bilan"] and all(y.get("reported") for y in day_picks + combos) and x["date"] not in t.get("bilans", []):
             def count(group):
                 return sum(y["reported"] == "win" for y in group), sum(y["reported"] in ("win", "lose") for y in group)
             pronos = [y for y in day_picks if y.get("tier") not in ("moins_sur", "outsider")]
@@ -590,6 +681,9 @@ def tg_results(now=None):
                     if y["reported"] == "unknown" and not y.get("score"):
                         y = dict(y, score="résultat introuvable")
                     lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} {(' @ ' + engine.fr(y['odds'], 2)) if y.get('odds') else ''}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))
+            for y in combos:
+                lines.append(f"\n🎟️ <b><u>Combiné</u> : " + {"win": "✅ gagné", "lose": "❌ perdu"}.get(y["reported"], "❔ incomplet") + "</b>"
+                             + (f" @ {engine.fr(y['odds'], 2)}" if y.get("odds") else ""))
             done_all = [y for y in shared if y.get("reported") in ("win", "lose") and y.get("tier") != "combo_marker"]
             if done_all:  # bilan cumulé depuis le début
                 w_all = sum(y["reported"] == "win" for y in done_all)

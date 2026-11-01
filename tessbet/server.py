@@ -1036,11 +1036,14 @@ def tg_share(body):
                     shared[k] = {"id": nid, "date": d["date"], "match": n["match"], "pick": re.sub(r" \((bonne affaire|outsider)\)$", "", n["pick_label"]),
                                  "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
                                  "kickoff": n.get("kickoff"), "odds": n.get("odds"), "tier": "moins_sur", "reported": None}
-            if d.get("combo"):  # repère pour ne pas renvoyer le même combiné (pas de suivi de résultat pour l'instant)
+            if d.get("combo"):  # repère pour ne pas renvoyer le même combiné, et suivre son résultat
                 cm = "combo:" + "+".join(l["match"] for l in d["combo"]["legs"])
                 cid = "c" + hashlib.md5((d["date"] + cm).encode()).hexdigest()[:9]
-                shared.setdefault((d["date"], cm, ""), {"id": cid, "date": d["date"], "match": cm, "pick": "", "tier": "combo_marker", "reported": "skip"})
-        cutoff = (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=7)).isoformat()
+                shared.setdefault((d["date"], cm, ""), {"id": cid, "date": d["date"], "match": cm, "pick": "", "tier": "combo_marker", "reported": None,
+                                                        "odds": d["combo"].get("total_odds"),
+                                                        "legs": [{k: l.get(k) for k in ("match", "pick_label", "pick_team", "sport", "league_key", "kickoff")}
+                                                                 for l in d["combo"]["legs"]]})
+        cutoff = (dt.date.fromisoformat(today_paris()) - dt.timedelta(days=400)).isoformat()  # on garde l'historique (bilan « depuis le début »)
         t["shared"] = [x for x in shared.values() if x["date"] >= cutoff]
         engine.write_json(TG_PATH, t)
     return 200, {"ok": True, "chat": st["chat"]["title"]}
