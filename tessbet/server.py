@@ -845,10 +845,11 @@ def live_pronos():
     """Les pronos Tessbet du jour (publiés ou non) avec leur score en direct, pour l'onglet En direct."""
     import live
     day = engine.journee(now_utc()).isoformat()
-    out = []
+    out, seen = [], set()
     for x in read_json(TG_PATH, {}).get("shared") or []:
-        if x.get("date") != day or x.get("tier") == "combo_marker" or x.get("reported") == "doublon":
+        if x.get("date") != day or x.get("tier") == "combo_marker" or x.get("reported") == "doublon" or x["match"] in seen:
             continue
+        seen.add(x["match"])
         lv = x.get("live") or None
         st = live.bet_status({"match": x["match"], "pick": x["pick"], "pick_team": x.get("pick_team"), "sport": x.get("sport")}, lv) if lv else None
         if x.get("reported") in ("win", "lose"):
