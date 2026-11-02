@@ -1553,7 +1553,8 @@ def run(mode=None, offset=None):
     result = {"generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "date": today.isoformat(), "mode": mode, "offset": offset,
               "combo": combo, "combo_note": combo_note,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
-              "claude_dropped_items": info.get("dropped_items", []), "unverified": info.get("unverified", 0), "near": low + [n for n in near_misses(cands, cfg) if n["id"] not in {x["id"] for x in low}],
+              "claude_dropped_items": info.get("dropped_items", []), "unverified": info.get("unverified", 0), "near": [n for n in low + [n for n in near_misses(cands, cfg, limit=8) if n["id"] not in {x["id"] for x in low}]
+                       if n.get("note", 0) >= MIN_NOTE][:4],  # moins sûrs : seulement les notes de 3/5 et plus
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
