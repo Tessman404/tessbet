@@ -665,6 +665,8 @@ function ticket(s) {
   return el('article', { class: 'ticket' + (value ? ' value' : '') + (outsider ? ' outsider' : '') },
     el('div', { class: 'body' },
       value ? el('div', { class: 'vbanner' }, el('b', { text: '💡 Bonne affaire' }), ` – plus risqué : ${pct(s.prob)} de chances. La cote vaut plus que le risque, mais tu perdras plus souvent : petite mise.`) : null,
+      s.tier === 'extra' ? el('div', { class: 'vbanner' }, el('b', { text: '⚽ Autre pari foot' }),
+        s.odds_known === false ? ` – cote Winamax à vérifier : joue-le seulement si elle vaut au moins ${odds(s.min_odds || s.odds)}.` : ' – cote Winamax.') : null,
       outsider ? el('div', { class: 'vbanner obanner' }, el('b', { text: '🎲 Outsider – coup de poker' }), ` : seulement ${pct(s.prob)} de chances, mais la cote vaut plus que ce risque. Mise fixe de ${eur(suggested)}, jamais en combiné. Perdre plusieurs fois de suite est normal.`) : null,
       el('div', { class: 'meta' }, el('span', {}, s.new ? el('span', { class: 'newtag', text: '🆕 Nouveau' }) : null, `${SPORT[s.sport] || ''} ${s.league}`), el('span', { text: nightTxt(s.kickoff_local) })),
       el('h2', { class: 'pick', text: s.pick_label }),

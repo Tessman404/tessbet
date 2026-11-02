@@ -60,6 +60,9 @@ def pick_team(bet):
     if bet.get("pick_team"):
         return bet["pick_team"]
     label = bet.get("pick", "")
+    m = re.match(r"^Double chance : (.+) ou match nul$", label)
+    if m:
+        return m.group(1)
     return None if label.startswith("Match nul") else re.sub(r"\s*\(.*\)$", "", re.sub(r"^Victoire de ", "", label))
 
 
@@ -275,6 +278,35 @@ def max_lead(slug, ev, comp, home_idx, side):
     return best
 
 
+def market_of(label):
+    """Le type de pari d'après son libellé : 1N2 (h2h), double chance, remboursé si nul, plus/moins de buts."""
+    l = (label or "").lower()
+    if l.startswith("double chance"):
+        return ("dc",)
+    if "remboursé si match nul" in l:
+        return ("dnb",)
+    m = re.match(r"(plus|moins) de ([\d.,]+) buts", l)
+    if m:
+        return ("totals", "Over" if m.group(1) == "plus" else "Under", float(m.group(2).replace(",", ".")))
+    return ("h2h",)
+
+
+def settle(label, side, score):
+    """Résultat d'un pari fini selon son type : "win", "lose", "void" (remboursé) ou None."""
+    mk = market_of(label)
+    if mk[0] == "totals":
+        total = sum(score)
+        return "win" if (total > mk[2] if mk[1] == "Over" else total < mk[2]) else "lose"
+    if mk[0] in ("dc", "dnb"):
+        if side not in ("home", "away"):
+            return None
+        mine, other = (score[0], score[1]) if side == "home" else (score[1], score[0])
+        if mk[0] == "dc":
+            return "win" if mine >= other else "lose"
+        return "win" if mine > other else "void" if mine == other else "lose"
+    return final_result(side, score)
+
+
 def final_result(side, score):
     h, a = score
     if side is None:
@@ -333,9 +365,21 @@ def bet_status(bet, lv):
     if not home:
         return None
     side = pick_side(bet, home, away)
-    if side is None:
+    mk = market_of(bet.get("pick"))
+    if side is None and mk[0] != "totals":
         return None
     score = lv["score"]
+    if mk[0] != "h2h":  # double chance, remboursé si nul, nombre de buts
+        if lv["state"] not in ("in", "post"):
+            return None
+        r = settle(bet.get("pick"), side, score)
+        if lv["state"] == "post":
+            return {"win": {"code": "won", "text": "Gagné"}, "lose": {"code": "lost", "text": "Perdu"},
+                    "void": {"code": "void", "text": "Remboursé (match nul)"}}.get(r)
+        if mk[0] == "totals" and mk[1] == "Over" and r == "win":
+            return {"code": "won", "text": "Déjà gagné (assez de buts)"}
+        return {"win": {"code": "winning", "text": "Tu gagnes pour l'instant"}, "void": {"code": "draw", "text": "Égalité : remboursé pour l'instant"}}.get(
+            r, {"code": "losing", "text": "Tu perds pour l'instant"})
     regular = (bet.get("sport") == "hockey" and lv.get("reg") and "prolongation" not in (bet.get("pick") or "").lower())
     if lv["state"] == "post":
         r = final_result(side, lv["reg"] if regular else score)  # Winamax « Résultat » au hockey : temps réglementaire (nul possible)
@@ -384,8 +428,8 @@ def messages(bet, home, away, cur, st, sport, first):
     if cur["name"] == "STATUS_HALFTIME" and not st.get("ht"):
         out.append(("ht", f"⏸️ Mi-temps : {line}", f"Ton pari « {pick} » : {pick_status(side, sc)}."))
     if cur["state"] == "post" and not st.get("final"):
-        res = final_result(side, sc)
-        verdict = {"win": "est GAGNÉ ✅", "lose": "est PERDU ❌"}.get(res, "est terminé")
+        res = settle(bet.get("pick"), side, sc)
+        verdict = {"win": "est GAGNÉ ✅", "lose": "est PERDU ❌", "void": "est REMBOURSÉ ↩️ (match nul)"}.get(res, "est terminé")
         if res != "win" and st.get("two_up"):
             verdict = f"est GAGNÉ ✅ ({lead_note(sport)}, même si l'adversaire est revenu)"
         out.append(("final", f"🏁 Terminé : {line}",
@@ -445,7 +489,7 @@ def tick(now=None):
         cur = read_state(comp, idx)
         cur["goal"] = last_goal(comp, idx)
         st["slug"] = slug
-        if (bet["sport"] in LEAD_PAID and str(bet.get("book") or "").startswith("winamax") and cur["state"] == "in"
+        if (bet["sport"] in LEAD_PAID and market_of(bet.get("pick"))[0] == "h2h" and str(bet.get("book") or "").startswith("winamax") and cur["state"] == "in"
                 and two_up(pick_side(bet, home, away), cur["score"], bet["sport"])):
             st["two_up"] = True
         for key, title, message in messages(bet, home, away, cur, st, bet["sport"], first):
@@ -528,9 +572,10 @@ def leg_outcome(leg, now, cache):
         st = read_state(comp, idx)
         if st["state"] != "post":
             return ("unknown", "") if kick and now > kick + GIVE_UP_H * 3600 else (None, "")
-        side = pick_side({"pick": leg.get("pick_label") or leg.get("pick"), "pick_team": leg.get("pick_team")}, home, away)
-        res = final_result(side, st["score"])
-        if res == "lose" and sport in LEAD_PAID and max_lead(slug, ev, comp, idx, side) >= LEAD_PAID[sport][0]:
+        label = leg.get("pick_label") or leg.get("pick")
+        side = pick_side({"pick": label, "pick_team": leg.get("pick_team")}, home, away)
+        res = settle(label, side, st["score"])
+        if res == "lose" and market_of(label)[0] == "h2h" and sport in LEAD_PAID and max_lead(slug, ev, comp, idx, side) >= LEAD_PAID[sport][0]:
             res = "win"  # garantie Winamax (avance de 2 buts / 20 points / 3 buts)
         return res or "unknown", f"{st['score'][0]}-{st['score'][1]}"
     return ("unknown", "") if kick and now > kick + GIVE_UP_H * 3600 else (None, "")
@@ -747,7 +792,8 @@ def tg_results(now=None):
         if found:  # score en direct, pour l'onglet En direct
             x["live"] = {k: found.get(k) for k in ("score", "clock", "state", "start", "reg", "ot") if found.get(k) is not None}
             dup = True
-        if foot and found and found["state"] == "in" and not x.get("two_up") and two_up(side, found["score"], x["sport"]):
+        if (foot and found and found["state"] == "in" and not x.get("two_up") and market_of(x.get("pick"))[0] == "h2h"
+                and two_up(side, found["score"], x["sport"])):
             x["two_up"], dup = True, True  # mémorisé (dup : on enregistre le fichier)
         if (not found or found["state"] != "post") and kick and now > kick + GIVE_UP_H * 3600:
             x["reported"], dup = "unknown", True  # résultat introuvable (ligue non suivie) : le bilan du jour ne reste pas bloqué
@@ -756,7 +802,9 @@ def tg_results(now=None):
             _tg_next[x["id"]] = now + ((90 if foot else 180) if found else 600)  # match en cours : on repasse souvent
             continue
         regular = x.get("sport") == "hockey" and found.get("reg") and "prolongation" not in (x.get("pick") or "").lower()
-        res = final_result(side, found["reg"] if regular else found["score"])  # hockey « Résultat » : 60 minutes, nul possible
+        res = settle(x.get("pick"), side, found["reg"] if regular else found["score"])  # hockey « Résultat » : 60 minutes, nul possible
+        if market_of(x.get("pick"))[0] != "h2h":
+            foot = False  # garantie Winamax (avance) : seulement pour le 1N2
         if res == "lose" and foot and not x.get("two_up") and max_lead(slug, ev, comp, idx, side) >= LEAD_PAID[x["sport"]][0]:
             x["two_up"] = True  # avance ratée pendant le suivi : retrouvée dans le détail du match
         x["lead_checked"] = True
@@ -770,7 +818,8 @@ def tg_results(now=None):
             + (f" – {found['reg'][0]}-{found['reg'][1]} à la fin du temps réglementaire" if regular and found.get("ot") else "") \
             + (f" – {LEAD_PAID[x['sport']][1]} d'avance" if saved else "")
         head = (("🔁 <b>Correction</b> : " if x.get("correction") and x["correction"] != res else "")
-                + ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
+                + ("✅ <b>GAGNÉ</b>" if res == "win" else "↩️ <b>REMBOURSÉ</b> (match nul)" if res == "void" else "❌ <b>PERDU</b>")
+                + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "") + (" ⚽ <i>(autre pari foot)</i>" if x.get("tier") == "extra" else "")
                 + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else "")
                 + (" 🎟️ <i>(match du combiné)</i>" if x.get("tier") == "combo_leg" else ""))
         try:
@@ -818,18 +867,19 @@ def tg_results(now=None):
         if send["bilan"] and all(y.get("reported") for y in day_picks + combos) and x["date"] not in t.get("bilans", []):
             def count(group):
                 return sum(y["reported"] == "win" for y in group), sum(y["reported"] in ("win", "lose") for y in group)
-            pronos = [y for y in day_picks if y.get("tier") not in ("moins_sur", "outsider", "combo_leg")]
+            pronos = [y for y in day_picks if y.get("tier") not in ("moins_sur", "outsider", "combo_leg", "extra")]
             outs = [y for y in day_picks if y.get("tier") == "outsider"]
             others = [y for y in day_picks if y.get("tier") == "moins_sur"]
             legs_only = [y for y in day_picks if y.get("tier") == "combo_leg"]
+            extra_g = [y for y in day_picks if y.get("tier") == "extra"]
             lines = [f"📊 <b>Bilan Tessbet du {x['date'][8:10]}/{x['date'][5:7]}</b>"]
-            for label, group in (("Pronos", pronos), ("🎲 Outsiders", outs), ("Moins sûrs", others), ("🎟️ Matchs du combiné", legs_only)):
+            for label, group in (("Pronos", pronos), ("🎲 Outsiders", outs), ("Moins sûrs", others), ("⚽ Autres paris foot", extra_g), ("🎟️ Matchs du combiné", legs_only)):
                 if not group:
                     continue
                 w, k = count(group)
                 lines.append(f"\n<b><u>{label}</u> : {w}/{k}</b>")
                 for y in group:
-                    mark = {"win": "✅", "lose": "❌"}.get(y["reported"], "❔")
+                    mark = {"win": "✅", "lose": "❌", "void": "↩️"}.get(y["reported"], "❔")
                     if y["reported"] == "unknown" and not y.get("score"):
                         y = dict(y, score="résultat introuvable")
                     lines.append(f"{mark} {_esc(y['match'])} – {_esc(y['pick'])} {(' @ ' + engine.fr(y['odds'], 2)) if y.get('odds') else ''}" + (f" ({_esc(y['score'])})" if y.get("score") else ""))

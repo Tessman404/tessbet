@@ -73,6 +73,18 @@
     "sites": ["winamax"]
   },
 
+  "extra": {
+    "enabled": true,
+    "review": 4,
+    "max": 3,
+    "dc_min_prob": 0.85,
+    "dnb_min_prob": 0.80,
+    "totals_min_prob": 0.72,
+    "totals_min_odds": 1.20,
+    "total_lines": [1.5, 2.5, 3.5],
+    "totals_leagues": ["soccer_france_ligue_one", "soccer_epl", "soccer_spain_la_liga", "soccer_germany_bundesliga", "soccer_italy_serie_a"]
+  },
+
   "outsider": {
     "enabled": true,
     "max": 2,

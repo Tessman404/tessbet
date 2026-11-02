@@ -10,6 +10,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import math
 import random
 import re
 import sys
@@ -295,6 +296,15 @@ def fr(x, decimals):
 
 
 def explain(c):
+    if c.get("market") in ("dc", "dnb"):
+        what = ("Double chance : gagné si l'équipe gagne OU fait match nul" if c["market"] == "dc"
+                else "Remboursé si nul : gagné si l'équipe gagne, mise rendue en cas de nul, perdu sinon")
+        return [what + ".", f"Chances estimées : {round(c['prob'] * 100)} % (calculées à partir des cotes 1N2 de {c['n_books']} sites).",
+                f"La cote Winamax de ce pari n'est pas dans nos données : joue-le seulement si elle est d'au moins {fr(c['min_odds'], 2)} (sa vraie valeur)."]
+    if c.get("market") == "totals":
+        return [f"{pick_label(c)} : gagné si le total de buts est {'supérieur' if c['side'] == 'Over' else 'inférieur'} à {fr(c['line'], 1)}.",
+                f"Chances estimées : {round(c['prob'] * 100)} % (consensus de {c['n_books']} sites, marge retirée).",
+                f"Cote Winamax : {fr(c['odds'], 2)}."]
     r = [f"Probabilité estimée : {round(c['prob'] * 100)} % (marge des bookmakers retirée)."]
     if c["agree"] == c["n_books"]:
         r.append(f"Les {c['n_books']} bookmakers analysés donnent le même favori.")
@@ -327,10 +337,93 @@ def explain(c):
 
 
 def pick_label(c):
+    mk = c.get("market")
+    if mk == "dc":
+        return f"Double chance : {c['team']} ou match nul"
+    if mk == "dnb":
+        return f"{c['team']} (remboursé si match nul)"
+    if mk == "totals":
+        return f"{'Plus' if c['side'] == 'Over' else 'Moins'} de {fr(c['line'], 1)} buts dans le match"
     if c["pick"] == "Draw":
         return "Match nul"
     # hockey : les cotes analysées sont celles du vainqueur prolongation incluse (pas le « Résultat » en temps réglementaire)
     return f"Victoire de {c['pick']}" + (" (prolongation incluse)" if c.get("sport") == "hockey" else "")
+
+
+def extra_candidates(ev, cfg):
+    """Foot : double chance, remboursé si nul (calculés depuis les cotes 1N2) et plus/moins de buts (vraies cotes)."""
+    if ev["sport"] != "football":
+        return []
+    x = cfg.get("extra") or {}
+    c3 = dict(cfg, selection=dict(cfg["selection"], exclude_draw=False))
+    by = {c["pick"]: c for c in analyse_event(ev, c3)}
+    out = []
+    if all(n in by for n in (ev["home"], ev["away"], "Draw")):
+        pd = by["Draw"]["prob"]
+        for team in (ev["home"], ev["away"]):
+            base = by[team]
+            if base["prob"] < 0.45:
+                continue
+            dc = base["prob"] + pd
+            dnb = base["prob"] / max(0.01, 1 - pd)
+            for mk, p, fair in (("dc", dc, 1 / dc), ("dnb", dnb, (1 - pd) / base["prob"])):
+                c = dict(base, pick=f"{mk.upper()} {team}", team=team, market=mk, prob=p, odds=round(fair, 2), odds_known=False, playable=True,
+                         min_odds=max(1.01, math.ceil(fair * (1 + cfg["selection"]["min_edge"]) * 100) / 100),  # même marge tolérée que les pronos
+                         offers=[], bookmaker="Winamax (cote à vérifier)",
+                         draw_prob=pd, team_prob=base["prob"])
+                out.append(finalize(c))
+    sharp = cfg.get("sharp_books", {})
+    lines = {}
+    for b in ev["bookmakers"]:
+        for pt, oc in (b.get("totals") or {}).items():
+            if "Over" in oc and "Under" in oc:
+                lines.setdefault(pt, []).append((b, oc))
+    for pt, rows in lines.items():
+        if pt not in x.get("total_lines", [1.5, 2.5, 3.5]) or len(rows) < 3:
+            continue
+        w = [sharp.get(b["key"], 1) for b, _ in rows]
+        p_over = sum(wi * normalize([oc["Over"], oc["Under"]])[0] for wi, (b, oc) in zip(w, rows)) / sum(w)
+        for side, p in (("Over", p_over), ("Under", 1 - p_over)):
+            wx = next((oc[side] for b, oc in rows if is_playable(b["key"], cfg.get("playable_books", []))), None)
+            if not wx:
+                continue
+            c = {"event_id": ev["id"], "sport": "football", "league": ev["league"], "league_key": ev.get("league_key", ""),
+                 "commence": ev["commence"], "home": ev["home"], "away": ev["away"], "pick": f"{side} {pt}", "market": "totals",
+                 "side": side, "line": pt, "prob": p, "dispersion": pstdev([normalize([oc["Over"], oc["Under"]])[0] for _, oc in rows]),
+                 "n_books": len(rows), "agree": len(rows), "odds": wx, "bookmaker": "Winamax", "playable": True, "offers": [],
+                 "odds_known": True}
+            out.append(finalize(c))
+    return out
+
+
+def select_extra(extras, cfg, exclude=()):
+    """Les meilleurs « autres paris foot » : très probables, et pas sur un match déjà retenu."""
+    x = cfg.get("extra") or {}
+    if not x.get("enabled", True):
+        return []
+    ok = []
+    for c in extras:
+        if c["event_id"] in exclude or c.get("af_agrees") is False:
+            continue
+        if c["market"] == "dc" and c["prob"] >= x.get("dc_min_prob", 0.85):
+            ok.append(c)
+        elif c["market"] == "dnb" and c["prob"] >= x.get("dnb_min_prob", 0.80) and c["team_prob"] >= 0.55:
+            ok.append(c)
+        elif (c["market"] == "totals" and c["prob"] >= x.get("totals_min_prob", 0.72) and c["odds"] >= x.get("totals_min_odds", 1.20)
+              and c["edge"] >= cfg["selection"]["min_edge"]):
+            ok.append(c)
+    ok.sort(key=lambda c: (c["prob"] - 2 * c["dispersion"]), reverse=True)
+    picked, seen = [], set()
+    for c in ok:
+        if c["event_id"] in seen:
+            continue
+        seen.add(c["event_id"])
+        c["tier"] = "extra"
+        c["stake_pct"] = 0.01
+        picked.append(c)
+        if len(picked) >= x.get("review", 4):
+            break
+    return picked
 
 
 def select(cands, cfg, limit=None):
@@ -546,7 +639,9 @@ def build_review_prompt(pool, today, now_date=None):
                         " | type : OUTSIDER (équipe donnée perdante, cote haute, peu probable : ne réponds \"confirme\" que si tu trouves "
                         "une raison concrète et récente qui lui donne une vraie chance — favori qui fait tourner, absents importants chez le favori, "
                         "fatigue, enjeu, forme — sinon réponds \"ecarte\")" if c.get("tier") == "outsider" else
-                        " | type : MATCH POUR UN COMBINÉ (vérifie-le comme un pari normal)" if c.get("tier") == "combo" else "")
+                        " | type : MATCH POUR UN COMBINÉ (vérifie-le comme un pari normal)" if c.get("tier") == "combo" else
+                        " | type : AUTRE PARI FOOT (double chance, remboursé si nul ou nombre de buts : vérifie forme, absents, style de jeu "
+                        "et enjeu, et ne confirme que si le pari tient vraiment)" if c.get("tier") == "extra" else "")
                      + (f" | absents connus (API-Football) : {'; '.join(c['injuries'])}" if c.get("injuries") else ""))
     return f"""{_when(today, now_date)} Tu es l'analyste de Tessbet, une appli personnelle de paris sportifs.
 Un moteur a présélectionné les paris ci-dessous d'après les cotes des bookmakers. Ton travail : vérifier sur le web
@@ -720,7 +815,9 @@ def task_request(pool, today, env, key=None):
               "kickoff_paris": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
               **({"type": {"value": "bonne affaire (ne confirme que si rien ne s'y oppose)",
                            "outsider": "outsider (ne confirme que si une raison concrète lui donne une vraie chance, sinon écarte)",
-                           "combo": "match pour un combiné (à vérifier comme un pari normal)"}[c["tier"]]} if c.get("tier") in ("value", "outsider", "combo") else {}),
+                           "combo": "match pour un combiné (à vérifier comme un pari normal)",
+                           "extra": "autre pari foot : double chance, remboursé si nul ou nombre de buts (vérifie forme, absents, style de jeu)"}[c["tier"]]}
+                 if c.get("tier") in ("value", "outsider", "combo", "extra") else {}),
               **({"absents_connus": c["injuries"]} if c.get("injuries") else {})} for c in pool]
     body = {"date": today.isoformat(), "items": items}
     gh_call("PUT", path, token, {"message": f"Tessbet : demande d'analyse du {today.isoformat()}",
@@ -922,14 +1019,15 @@ def _drop_info(c):
             "id": "d" + hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:9]}
 
 
-def review_and_pick(cands, cfg, env, today, mode, warnings):
+def review_and_pick(cands, cfg, env, today, mode, warnings, extras=()):
     """Présélection -> vérification par Claude -> choix final. Claude peut écarter, jamais ajouter."""
     cl = cfg.get("claude", {})
     reliable = select(cands, cfg, limit=cl.get("max_review", 6))
     value = select_value(cands, cfg, exclude={c["event_id"] for c in reliable})
     outsiders = select_outsider(cands, cfg, exclude={c["event_id"] for c in reliable + value})
     combo_legs = select_combo_legs(cands, cfg, exclude={c["event_id"] for c in reliable + value + outsiders})
-    pool = reliable + value + outsiders + combo_legs
+    extra = select_extra(list(extras), cfg, exclude={c["event_id"] for c in reliable + value + outsiders})
+    pool = reliable + value + outsiders + combo_legs + extra
     info = {"reviewed": len(pool), "dropped": 0, "unavailable": False, "dropped_items": []}
     if not pool:
         return [], info
@@ -984,9 +1082,10 @@ def review_and_pick(cands, cfg, env, today, mode, warnings):
             c["confidence"] = "Moyenne"
         final.append(c)
     final.sort(key=lambda c: c["claude"]["verdict"] != "confirme")  # tri stable : les « confirmé » d'abord
-    final = ([c for c in final if c.get("tier") not in ("value", "outsider")][:cfg["selection"]["max_picks"]]
+    final = ([c for c in final if c.get("tier") not in ("value", "outsider", "extra")][:cfg["selection"]["max_picks"]]
              + [c for c in final if c.get("tier") == "value"][:(cfg.get("value") or {}).get("max", 1)]
-             + [c for c in final if c.get("tier") == "outsider"][:(cfg.get("outsider") or {}).get("max", 2)])
+             + [c for c in final if c.get("tier") == "outsider"][:(cfg.get("outsider") or {}).get("max", 2)]
+             + [c for c in final if c.get("tier") == "extra"][:(cfg.get("extra") or {}).get("max", 3)])
     if mode != "demo" and cl.get("enabled", True) and cl.get("source") != "claude_task":
         add_written_analysis(final, cfg, env, today, warnings)
     return final, info
@@ -1078,11 +1177,18 @@ def sport_of(key):
 def convert_event(e, key, title):
     books = []
     for b in e.get("bookmakers", []):
+        tot = {}
+        for m in b.get("markets", []):
+            if m["key"] == "totals":  # plus / moins de buts : {ligne: {"Over": cote, "Under": cote}}
+                for o in m["outcomes"]:
+                    if o.get("point") is not None:
+                        tot.setdefault(float(o["point"]), {})[o["name"]] = o["price"]
         for m in b.get("markets", []):
             if m["key"] == "h2h":
                 books.append({"key": b["key"], "title": b["title"],
                               "outcomes": {o["name"]: o["price"] for o in m["outcomes"]},
-                              "links": {o["name"]: o.get("link") or m.get("link") or b.get("link") for o in m["outcomes"]}})
+                              "links": {o["name"]: o.get("link") or m.get("link") or b.get("link") for o in m["outcomes"]},
+                              **({"totals": tot} if tot else {})})
     return {"id": e["id"], "sport": sport_of(key), "league": title, "league_key": key,
             "commence": e["commence_time"], "home": e["home_team"], "away": e["away_team"], "bookmakers": books}
 
@@ -1175,7 +1281,8 @@ def fetch_live_events(cfg, env, now, warnings, force=False):
                 with open(cache_path, encoding="utf-8") as f:
                     raw = json.load(f)
         if raw is None:
-            params = {"apiKey": key, "markets": "h2h", "oddsFormat": "decimal",
+            params = {"apiKey": key, "markets": "h2h,totals" if k in (cfg.get("extra") or {}).get("totals_leagues", []) else "h2h",
+                      "oddsFormat": "decimal",
                       "dateFormat": "iso", "commenceTimeFrom": (now - LIVE_WINDOW).strftime(fmt),
                       "commenceTimeTo": end.astimezone(dt.timezone.utc).strftime(fmt)}
             if books:  # 10 bookmakers au plus = 1 seul crédit par appel
@@ -1376,7 +1483,14 @@ def run(mode=None, offset=None):
             c["_af_skip"] = True  # prédiction de forme seulement pour les mieux placés ; absents pour tous
         enrich_football(shortlist + rest, cfg, env, today, warnings)
         cands = [finalize(c) for c in cands]
-    picks, info = review_and_pick(cands, cfg, env, today, mode, warnings)
+    extras = []
+    for ev in events:
+        extras += extra_candidates(ev, cfg)
+    for c in extras:  # mêmes infos de forme / absents que le match
+        base = next((b for b in cands if b["event_id"] == c["event_id"] and b.get("injuries")), None)
+        if base:
+            c["injuries"] = base["injuries"]
+    picks, info = review_and_pick(cands, cfg, env, today, mode, warnings, extras)
 
     selections, low = [], []
     for c in picks:
@@ -1391,16 +1505,18 @@ def run(mode=None, offset=None):
             continue
         selections.append({
             "id": hashlib.md5(f"{c['event_id']}{c['pick']}".encode()).hexdigest()[:10],
-            "sport": c["sport"], "league": c["league"], "league_key": c.get("league_key", ""), "pick_team": c["pick"], "kickoff": c["commence"],
+            "sport": c["sport"], "league": c["league"], "league_key": c.get("league_key", ""),
+            "pick_team": c.get("team") if c.get("market") in ("dc", "dnb") else None if c.get("market") == "totals" else c["pick"], "kickoff": c["commence"],
             "kickoff_local": kick.strftime("%H:%M"), "match": f"{c['home']} – {c['away']}",
             "pick": c["pick"], "pick_label": pick_label(c), "odds": round(c["odds"], 2),
             "bookmaker": c["bookmaker"], "offers": c.get("offers", []),
             "prob": round(c["prob"], 4), "edge": round(c["edge"], 4),
             "kind": c["kind"], "confidence": c["confidence"], "confidence_score": c["confidence_score"],
             "stake_pct": c["stake_pct"], "n_books": c["n_books"], "reasons": explain(c), "tier": c.get("tier", "fiable"),
-            "claude": c.get("claude"), "note": note})
+            "claude": c.get("claude"), "note": note,
+            **({"market": c["market"], "odds_known": c.get("odds_known", True), "min_odds": c.get("min_odds")} if c.get("market") else {})})
 
-    order = {"fiable": 0, "value": 1, "outsider": 2}
+    order = {"fiable": 0, "value": 1, "outsider": 2, "extra": 3}
     selections.sort(key=lambda x: (order.get(x["tier"], 0), -x["note"]))  # les mieux notés d'abord
     analysed = len({c["event_id"] for c in cands})
     n_value = sum(s["tier"] == "value" for s in selections)

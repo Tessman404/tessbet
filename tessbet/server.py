@@ -365,8 +365,8 @@ def auto_settle(now=None):
             if not b.get("legs"):
                 lv = (lvs.get(b["id"]) or {}).get("live") or {}
                 st = live.bet_status(b, lv) if lv.get("state") == "post" else None
-                if st and st["code"] in ("won", "lost"):
-                    b["result"], b["settled_at"], b["auto"] = ("win" if st["code"] == "won" else "lose"), stamp, True
+                if st and st["code"] in ("won", "lost", "void"):
+                    b["result"], b["settled_at"], b["auto"] = {"won": "win", "lost": "lose", "void": "void"}[st["code"]], stamp, True
                     changed += 1
                 continue
             for i, leg in enumerate(b["legs"]):
@@ -374,8 +374,8 @@ def auto_settle(now=None):
                     continue
                 lv = (lvs.get(f"{b['id']}:{i}") or {}).get("live") or {}
                 st = live.bet_status(leg, lv) if lv.get("state") == "post" else None
-                if st and st["code"] in ("won", "lost"):
-                    leg["result"], leg["auto"] = ("win" if st["code"] == "won" else "lose"), True
+                if st and st["code"] in ("won", "lost", "void"):
+                    leg["result"], leg["auto"] = {"won": "win", "lost": "lose", "void": "void"}[st["code"]], True
                     changed += 1
             res = combo_result(b["legs"])
             if res != "pending":
@@ -911,7 +911,10 @@ def share_text(days, update=False):
         def pick_block(s):
             cl = s.get("claude") or {}
             return (f"{ball.get(s['sport'], '')} {night(s['kickoff_local'])} · {_h(s['league'])}\n{_tg_match(s['match'], s['pick_label'], s.get('pick_team'))}\n"
-                    f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)"
+                    + (f"👉 <b>{_h(s['pick_label'])}</b> ({round(s['prob'] * 100)} % de chances)\n"
+                       f"⚠️ <i>Cote Winamax à vérifier : à jouer seulement si elle vaut au moins {engine.fr(s.get('min_odds') or s['odds'], 2)}</i>"
+                       if s.get("odds_known") is False else
+                       f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)")
                     + (f"\n{'⭐' * s['note']} <b>Note {s['note']}/5</b>" if s.get("note") else "")
                     + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
 
@@ -925,7 +928,8 @@ def share_text(days, update=False):
 
         sections = [("fiable", "🎯 <b><u>Pronos de confiance</u></b>", "vérifiés par Claude, notés de 3 à 5 (5 = le plus sûr)"),
                     ("value", "💡 <b><u>Bonne affaire</u></b>", "plus risquée, cote au-dessus de sa vraie valeur, mise réduite"),
-                    ("outsider", "🎲 <b><u>Outsiders</u></b>", "coup de poker, petite mise fixe")]
+                    ("outsider", "🎲 <b><u>Outsiders</u></b>", "coup de poker, petite mise fixe"),
+                    ("extra", "⚽ <b><u>Autres paris foot</u></b>", "double chance, remboursé si nul ou nombre de buts — vérifiés par Claude")]
         shown = False
         for tier, title, sub in sections:
             mine = [x for x in sels if x.get("tier", "fiable") == tier]
@@ -981,6 +985,7 @@ def my_report(scope="all", today=None):
               ("💡", "Bonnes affaires", lambda x: x.get("tier") == "value"),
               ("🎲", "Outsiders", lambda x: x.get("tier") == "outsider"),
               ("🤔", "Moins sûrs", lambda x: x.get("tier") == "moins_sur"),
+              ("⚽", "Autres paris foot", lambda x: x.get("tier") == "extra"),
               ("🎟️", "Matchs des combinés", lambda x: x.get("tier") == "combo_leg")]
 
     def line(xs):
