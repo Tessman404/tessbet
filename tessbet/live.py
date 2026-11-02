@@ -816,6 +816,7 @@ def tg_results(now=None):
             continue
         sc = f"{found['score'][0]}-{found['score'][1]}" + (f" ({found['clock']})" if x["sport"] == "tennis" and found.get("clock") else "") \
             + (f" – {found['reg'][0]}-{found['reg'][1]} à la fin du temps réglementaire" if regular and found.get("ot") else "") \
+            + (" – après prolongation (comptée)" if x.get("sport") == "hockey" and not regular and found.get("ot") and "prolongation incluse" in (x.get("pick") or "") else "") \
             + (f" – {LEAD_PAID[x['sport']][1]} d'avance" if saved else "")
         head = (("🔁 <b>Correction</b> : " if x.get("correction") and x["correction"] != res else "")
                 + ("✅ <b>GAGNÉ</b>" if res == "win" else "↩️ <b>REMBOURSÉ</b> (match nul)" if res == "void" else "❌ <b>PERDU</b>")

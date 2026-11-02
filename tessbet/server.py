@@ -915,6 +915,8 @@ def share_text(days, update=False):
                        f"⚠️ <i>Cote Winamax à vérifier : à jouer seulement si elle vaut au moins {engine.fr(s.get('min_odds') or s['odds'], 2)}</i>"
                        if s.get("odds_known") is False else
                        f"👉 {_h(s['pick_label'])} @ <b>{engine.fr(s['odds'], 2)}</b> ({round(s['prob'] * 100)} % de chances)")
+                    + ("\n⏱️ <b><u>PROLONGATION INCLUSE</u></b> : sur Winamax, prends « Vainqueur (prolongation incluse) », pas « Résultat »"
+                       if "prolongation incluse" in s["pick_label"] else "")
                     + (f"\n{'⭐' * s['note']} <b>Note {s['note']}/5</b>" if s.get("note") else "")
                     + (f"\n{'✅' if cl.get('verdict') == 'confirme' else '⚠️'} {_h(cl.get('resume', ''))}" if cl.get("resume") else ""))
 

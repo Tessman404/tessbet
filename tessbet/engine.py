@@ -347,7 +347,7 @@ def pick_label(c):
     if c["pick"] == "Draw":
         return "Match nul"
     # hockey : les cotes analysées sont celles du vainqueur prolongation incluse (pas le « Résultat » en temps réglementaire)
-    return f"Victoire de {c['pick']}" + (" (prolongation incluse)" if c.get("sport") == "hockey" else "")
+    return f"Victoire de {c['pick']}" + (" (prolongation incluse)" if c.get("sport") in ("hockey", "basketball", "americanfootball") else "")
 
 
 def extra_candidates(ev, cfg):
