@@ -690,11 +690,24 @@ def tg_results(now=None):
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒", "americanfootball": "🏈"}
     send = dict({"results": True, "bilan": True}, **(t.get("send") or {}))
     seen_keys, dup = set(), False
-    for x in shared:  # anciens doublons (même match envoyé deux fois) : un seul résultat
-        k = (x.get("date"), x.get("match"), x.get("pick"))
-        if k in seen_keys and not x.get("reported"):
+    for x in shared:  # même match en double (libellé du pari modifié entre deux analyses) : un seul résultat
+        if x.get("tier") == "combo_marker":
+            continue
+        k = (x.get("date"), x.get("match"), re.sub(r"\s*\(.*\)$", "", x.get("pick") or ""))
+        if k in seen_keys and x.get("reported") != "doublon":
             x["reported"], dup = "doublon", True
         seen_keys.add(k)
+    have = {(x.get("date"), x.get("match")) for x in shared if x.get("tier") != "combo_marker"}
+    for m in [x for x in shared if x.get("tier") == "combo_marker" and x.get("legs")]:  # chaque match d'un combiné compte aussi seul
+        for leg in m["legs"]:
+            if (m["date"], leg.get("match")) in have or not leg.get("match"):
+                continue
+            have.add((m["date"], leg["match"]))
+            shared.append({"id": "l" + __import__("hashlib").md5((m["date"] + leg["match"]).encode()).hexdigest()[:9], "date": m["date"],
+                           "match": leg["match"], "pick": leg.get("pick_label") or leg.get("pick") or "", "pick_team": leg.get("pick_team"),
+                           "sport": leg.get("sport") or "football", "league_key": leg.get("league_key", ""), "kickoff": leg.get("kickoff"),
+                           "odds": leg.get("odds"), "tier": "combo_leg", "reported": None, "published": m.get("published", True)})
+            dup = True
     for x in shared:  # tennis annoncé sur un score à égalité (données incomplètes) : on revérifie et on corrige
         m = re.match(r"(\d+)-(\d+)\b", x.get("score") or "")
         if (x.get("sport") == "tennis" and x.get("reported") in ("win", "lose") and m and "abandon" not in x.get("score", "")
@@ -758,7 +771,8 @@ def tg_results(now=None):
             + (f" – {LEAD_PAID[x['sport']][1]} d'avance" if saved else "")
         head = (("🔁 <b>Correction</b> : " if x.get("correction") and x["correction"] != res else "")
                 + ("✅ <b>GAGNÉ</b>" if res == "win" else "❌ <b>PERDU</b>") + (" 🤔 <i>(moins sûr)</i>" if x.get("tier") == "moins_sur" else "")
-                + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else ""))
+                + (" 🎲 <i>(outsider)</i>" if x.get("tier") == "outsider" else "")
+                + (" 🎟️ <i>(match du combiné)</i>" if x.get("tier") == "combo_leg" else ""))
         try:
             if send["results"] and x.get("correction") != res and x.get("published", True):  # correction : seulement si ça change
                 tg_send(f"{head} {ball.get(x['sport'], '')} {_esc(home)} {sc} {_esc(away)}\n👉 {_esc(x['pick'])} {(' @ ' + engine.fr(x['odds'], 2)) if x.get('odds') else ''}"
@@ -804,11 +818,12 @@ def tg_results(now=None):
         if send["bilan"] and all(y.get("reported") for y in day_picks + combos) and x["date"] not in t.get("bilans", []):
             def count(group):
                 return sum(y["reported"] == "win" for y in group), sum(y["reported"] in ("win", "lose") for y in group)
-            pronos = [y for y in day_picks if y.get("tier") not in ("moins_sur", "outsider")]
+            pronos = [y for y in day_picks if y.get("tier") not in ("moins_sur", "outsider", "combo_leg")]
             outs = [y for y in day_picks if y.get("tier") == "outsider"]
             others = [y for y in day_picks if y.get("tier") == "moins_sur"]
+            legs_only = [y for y in day_picks if y.get("tier") == "combo_leg"]
             lines = [f"📊 <b>Bilan Tessbet du {x['date'][8:10]}/{x['date'][5:7]}</b>"]
-            for label, group in (("Pronos", pronos), ("🎲 Outsiders", outs), ("Moins sûrs", others)):
+            for label, group in (("Pronos", pronos), ("🎲 Outsiders", outs), ("Moins sûrs", others), ("🎟️ Matchs du combiné", legs_only)):
                 if not group:
                     continue
                 w, k = count(group)

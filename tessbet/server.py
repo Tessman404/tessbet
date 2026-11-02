@@ -980,7 +980,8 @@ def my_report(scope="all", today=None):
     groups = [("🎯", "Pronos de confiance", lambda x: x.get("tier") in (None, "fiable")),
               ("💡", "Bonnes affaires", lambda x: x.get("tier") == "value"),
               ("🎲", "Outsiders", lambda x: x.get("tier") == "outsider"),
-              ("🤔", "Moins sûrs", lambda x: x.get("tier") == "moins_sur")]
+              ("🤔", "Moins sûrs", lambda x: x.get("tier") == "moins_sur"),
+              ("🎟️", "Matchs des combinés", lambda x: x.get("tier") == "combo_leg")]
 
     def line(xs):
         done = [x for x in xs if x.get("reported") in ("win", "lose")]
