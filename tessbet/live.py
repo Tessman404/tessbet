@@ -734,14 +734,20 @@ def tg_results(now=None):
     sent, cache = 0, {}
     ball = {"football": "⚽", "basketball": "🏀", "tennis": "🎾", "hockey": "🏒", "americanfootball": "🏈"}
     send = dict({"results": True, "bilan": True}, **(t.get("send") or {}))
-    seen_keys, dup = set(), False
+    seen_keys, dup = {}, False
     for x in shared:  # même match en double (libellé du pari modifié entre deux analyses) : un seul résultat
         if x.get("tier") == "combo_marker":
             continue
         k = (x.get("date"), x.get("match"), re.sub(r"\s*\(.*\)$", "", x.get("pick") or ""))
-        if k in seen_keys and x.get("reported") != "doublon":
+        first = seen_keys.get(k)
+        if first is not None and x.get("reported") != "doublon":
+            if x.get("published", True) and not first.get("published", True):  # le doublon avait été publié : on garde ça
+                first["published"] = True
+                if first.get("reported") in ("win", "lose", "void"):
+                    first["late_announce"] = True  # son résultat n'était pas parti sur Telegram
             x["reported"], dup = "doublon", True
-        seen_keys.add(k)
+        elif first is None:
+            seen_keys[k] = x
     have = {(x.get("date"), x.get("match")) for x in shared if x.get("tier") != "combo_marker"}
     for m in [x for x in shared if x.get("tier") == "combo_marker" and x.get("legs")]:  # chaque match d'un combiné compte aussi seul
         for leg in m["legs"]:
@@ -836,6 +842,17 @@ def tg_results(now=None):
         x["reported"] = res
         x["score"] = sc
         sent += 1
+    for x in shared:  # résultats oubliés (match publié en double) : on les envoie maintenant
+        if not x.pop("late_announce", False):
+            continue
+        dup = True
+        if send["results"]:
+            mark = {"win": "✅ <b>GAGNÉ</b>", "lose": "❌ <b>PERDU</b>", "void": "↩️ <b>REMBOURSÉ</b>"}[x["reported"]]
+            try:
+                tg_send(f"{mark}{' 🤔 <i>(moins sûr)</i>' if x.get('tier') == 'moins_sur' else ''} {ball.get(x.get('sport'), '')} "
+                        f"{_esc(x['match'])}{' (' + _esc(x['score']) + ')' if x.get('score') else ''}\n👉 {_esc(x['pick'])}\n<i>Résultat oublié, désolé.</i>")
+            except Exception as e:
+                print("telegram :", str(e)[:100], file=sys.stderr)
     before = sum(1 for x in shared if x.get("reg_checked"))
     fixes = hockey_regulation_fix(t, now, cache)
     if fixes or sum(1 for x in shared if x.get("reg_checked")) != before:
