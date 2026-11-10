@@ -74,6 +74,9 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .wxprep li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
 .wxprep li.done label { opacity: .5; text-decoration: line-through; }
 .btn.wx { background: #e10600; color: #fff; }
+.deep h3 { margin-top: 0; }
+.deepopt { margin: 10px 0; }
+.deepopt ul { margin: 4px 0; padding-left: 18px; }
 .livehead { margin: 22px 0 10px; font-size: 1.1rem; }
 .reportbtns .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
 .newsline { margin: 4px 0 10px; font-weight: 600; }
@@ -902,6 +905,40 @@ function comboCard(cb) {
 }
 
 /* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
+/* Analyse approfondie : des valeurs sûres les jours où Tessbet ne propose (presque) rien. */
+let deepTimer = null;
+function deepBlock() {
+  const box = el('div', { class: 'panel deep' });
+  const show = r => {
+    box.replaceChildren(el('h3', { text: '🔎 Analyse approfondie – valeurs sûres' }));
+    if (!r) {
+      box.append(el('p', { class: 'whysub', text: 'Peu de pronos aujourd\'hui ? Tessbet cherche un petit combiné des favoris les plus solides et un handicap NBA avec une vraie cote, vérifiés par Claude (1 crédit).' }),
+        el('button', { class: 'btn', type: 'button', text: '🔎 Lancer l\'analyse approfondie', onclick: run }));
+      return;
+    }
+    if (r.waiting) box.append(el('p', { class: 'note', text: '⏳ Claude vérifie ces paris, le résultat arrive ici tout seul.' }));
+    const v = x => x.verdict === 'confirme' ? '✅ ' : x.verdict === 'prudence' ? '⚠️ ' : x.verdict ? '' : '⏳ ';
+    if (r.combo) box.append(el('div', { class: 'deepopt' }, el('b', { text: `1. Petit combiné sûr – cote ${odds(r.combo.total_odds)} – ${Math.round(r.combo.prob * 100)} % de chances` }),
+      el('ul', {}, r.combo.legs.map(x => el('li', {}, v(x) + `${x.pick_label} @ ${odds(x.odds)} (${Math.round(x.prob * 100)} %) · ${x.match} · ${nightTxt(x.kickoff_local)}`,
+        x.resume ? el('small', { text: ' – ' + x.resume }) : null)))));
+    (r.handicaps || []).forEach((h, i) => box.append(el('div', { class: 'deepopt' },
+      el('b', { text: `${r.combo ? i + 2 : i + 1}. Handicap – cote ${odds(h.odds)} – ${Math.round(h.prob * 100)} % de chances` }),
+      el('p', { text: v(h) + `${h.pick_label} · ${h.match} · ${nightTxt(h.kickoff_local)}` }), h.resume ? el('small', { text: h.resume }) : null)));
+    if (!r.combo && !(r.handicaps || []).length) box.append(el('p', { text: 'Rien d\'assez sûr même en cherchant plus loin. Ne pas parier aujourd\'hui est le bon choix.' }));
+    (r.warnings || []).forEach(w => box.append(el('p', { class: 'note', text: w })));
+    box.append(el('p', { class: 'note', text: 'Plus de cote = moins de chances : misez petit. Vérifie la cote sur Winamax avant de jouer.' }));
+    clearTimeout(deepTimer);
+    if (r.waiting) deepTimer = setTimeout(async () => { try { show(await api('deep')); } catch (_) {} }, 20000);
+  };
+  const run = async () => {
+    if (!confirm('Lancer l\'analyse approfondie ? Elle utilise 1 crédit de cotes et demande une vérification à Claude.')) return;
+    box.replaceChildren(el('p', { text: '🔎 Analyse en cours…' }));
+    try { show(await api('deep', 'POST', {})); } catch (e) { toast(e.message, true); show(null); }
+  };
+  api('deep').then(r => show(r && (r.combo || (r.handicaps || []).length || r.waiting) ? r : null)).catch(() => show(null));
+  return box;
+}
+
 function newsText(d) {
   const at = d.prev_at ? ' de ' + hhmm(d.prev_at) : '';
   return d.news ? `🆕 ${plural(d.news, 'nouveauté', 'nouveautés')} depuis l'analyse précédente${at}` : `Rien de nouveau depuis l'analyse précédente${at}.`;
@@ -913,6 +950,7 @@ function daySection(i, multi) {
     i.kind === 'done' ? el('em', { text: i.picks ? plural(i.picks, 'pari', 'paris') : 'aucun pari' }) : null));
   if (i.kind === 'done' && i.picks) sec.append(el('p', { class: 'summary', text: d.message || '' }));
   if (i.kind === 'done' && d.news != null) sec.append(el('p', { class: 'newsline', text: newsText(d) }));
+  if (i.kind === 'done' && d === state.today && (d.selections || []).length < 2) sec.append(deepBlock());
   const box = el('div', { class: 'cols' });
   if (i.kind === 'todo') {
     const last = today && d.generated_at && d.date !== i.date ? fmtDay(d.date) : null;

@@ -63,6 +63,9 @@ def pick_team(bet):
     m = re.match(r"^Double chance : (.+) ou match nul$", label)
     if m:
         return m.group(1)
+    m = re.match(r"^(.+) gagne avec plus de ", label)
+    if m:
+        return m.group(1)
     return None if label.startswith("Match nul") else re.sub(r"\s*\(.*\)$", "", re.sub(r"^Victoire de ", "", label))
 
 
@@ -285,6 +288,9 @@ def market_of(label):
         return ("dc",)
     if "remboursé si match nul" in l:
         return ("dnb",)
+    m = re.search(r"gagne avec plus de ([\d.,]+) points d'écart", l)
+    if m:
+        return ("spread", float(m.group(1).replace(",", ".")))
     m = re.match(r"(plus|moins) de ([\d.,]+) buts", l)
     if m:
         return ("totals", "Over" if m.group(1) == "plus" else "Under", float(m.group(2).replace(",", ".")))
@@ -297,6 +303,11 @@ def settle(label, side, score):
     if mk[0] == "totals":
         total = sum(score)
         return "win" if (total > mk[2] if mk[1] == "Over" else total < mk[2]) else "lose"
+    if mk[0] == "spread":
+        if side not in ("home", "away"):
+            return None
+        mine, other = (score[0], score[1]) if side == "home" else (score[1], score[0])
+        return "win" if mine - other > mk[1] else "lose"
     if mk[0] in ("dc", "dnb"):
         if side not in ("home", "away"):
             return None

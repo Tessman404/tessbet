@@ -1243,6 +1243,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, out)
             if path == "/api/telegram":
                 return self._send(200, tg_status())
+            if path == "/api/deep":  # analyse approfondie : relecture (verdicts de Claude arrivés entre-temps)
+                return self._send(200, engine.deep_analysis(launch=False))
             if path == "/api/live/pronos":
                 return self._send(200, live_pronos())
             if path == "/api/proposals":  # tous les pronos suivis et leur résultat (sans rien envoyer)
@@ -1287,6 +1289,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(*tg_set_chat(body))
             if path == "/api/telegram/share":
                 return self._send(*tg_share(body))
+            if path == "/api/deep":  # bouton « Analyse approfondie » (1 crédit pour les handicaps NBA)
+                try:
+                    return self._send(200, engine.deep_analysis(launch=True))
+                except Exception as e:
+                    return self._send(400, {"error": str(e)[:200]})
             if path == "/api/telegram/report":
                 return self._send(*tg_report(body))
             if path == "/api/moves":

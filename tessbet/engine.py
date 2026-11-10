@@ -344,6 +344,8 @@ def pick_label(c):
         return f"{c['team']} (remboursé si match nul)"
     if mk == "totals":
         return f"{'Plus' if c['side'] == 'Over' else 'Moins'} de {fr(c['line'], 1)} buts dans le match"
+    if mk == "spread":
+        return f"{c['team']} gagne avec plus de {fr(abs(c['line']), 1)} points d'écart (handicap {fr(c['line'], 1)})"
     if c["pick"] == "Draw":
         return "Match nul"
     # hockey : les cotes analysées sont celles du vainqueur prolongation incluse (pas le « Résultat » en temps réglementaire)
@@ -1619,3 +1621,152 @@ if __name__ == "__main__":
     for w in res["warnings"]:
         print("  ! " + w)
     print("  notification :", res.get("notification", "aucune"))
+
+
+# ------------------------------------------------------------------ analyse approfondie (bouton, jours sans prono)
+NBA_MARGIN_SD = 12.0  # écart-type de l'écart final en NBA (points)
+
+
+def now_utc():
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _phi(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def _deep_path(today):
+    return os.path.join(DATA, f"deep_{today.isoformat()}.json")
+
+
+def _nba_spreads(cfg, env, today, launch):
+    """Cotes de handicap NBA du jour (1 crédit), gardées en mémoire pour la journée."""
+    path = os.path.join(DATA, f"spreads_{today.isoformat()}.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        pass
+    if not launch or not env.get("ODDS_API_KEY"):
+        return []
+    params = {"apiKey": env["ODDS_API_KEY"], "markets": "spreads", "oddsFormat": "decimal"}
+    if cfg.get("bookmakers"):
+        params["bookmakers"] = ",".join(cfg["bookmakers"])
+    else:
+        params["regions"] = cfg["regions"]
+    raw, headers = http_json(f"{ODDS_URL}/sports/basketball_nba/odds?{urllib.parse.urlencode(params)}")
+    q = headers.get("x-requests-remaining", headers.get("X-Requests-Remaining"))
+    if q is not None:
+        write_json(os.path.join(DATA, "quota.json"), {"remaining": int(float(q)), "at": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")})
+    write_json(path, raw)
+    return raw
+
+
+def _handicaps(raw, cfg, lo, hi):
+    """Pour chaque match NBA : le favori avec le handicap Winamax, et ses chances de le couvrir."""
+    out = []
+    for e in raw or []:
+        t = parse_iso(e["commence_time"])
+        if not (lo <= t < hi) or t <= now_utc():
+            continue
+        pts, wx = [], {}
+        for b in e.get("bookmakers", []):
+            for m in b.get("markets", []):
+                if m["key"] != "spreads":
+                    continue
+                home = next((o for o in m["outcomes"] if o["name"] == e["home_team"]), None)
+                if home and home.get("point") is not None:
+                    pts.append(float(home["point"]))
+                if is_playable(b["key"], cfg.get("playable_books", [])):
+                    wx = {o["name"]: (float(o["point"]), o["price"]) for o in m["outcomes"] if o.get("point") is not None}
+        if len(pts) < 3 or not wx:
+            continue
+        pts.sort()
+        mu_home = -pts[len(pts) // 2]  # écart attendu pour l'équipe à domicile (ligne médiane des sites)
+        fav, mu = (e["home_team"], mu_home) if mu_home > 0 else (e["away_team"], -mu_home)
+        if fav not in wx:
+            continue
+        line, price = wx[fav]
+        if line >= 0:
+            continue
+        p = _phi((mu + line) / NBA_MARGIN_SD)  # gagner avec plus de |line| points d'écart
+        c = {"event_id": e["id"], "sport": "basketball", "league": "NBA", "league_key": "basketball_nba", "commence": e["commence_time"],
+             "home": e["home_team"], "away": e["away_team"], "pick": f"HCP {fav} {line}", "team": fav, "market": "spread", "line": line,
+             "prob": p, "odds": price, "n_books": len(pts), "agree": len(pts), "dispersion": 0.0, "playable": True, "offers": [],
+             "bookmaker": "Winamax", "odds_known": True}
+        out.append(finalize(c))
+    return out
+
+
+def deep_analysis(env=None, launch=False):
+    """Bouton « Analyse approfondie » : des valeurs sûres quand Tessbet ne propose (presque) rien.
+    1) un petit combiné des favoris les plus solides ; 2) un handicap NBA avec une vraie cote. Vérifiés par Claude."""
+    env = env if env is not None else load_env()
+    cfg = load_config()
+    now = now_utc()
+    today = journee(now)
+    lo, hi = day_window(today)
+    events, _ = cached_events(cfg)
+    events = [e for e in events if lo <= parse_iso(e["commence"]) < hi and parse_iso(e["commence"]) > now]
+    cands = [finalize(c) for ev in events for c in analyse_event(ev, cfg)]
+    safe, seen = [], set()
+    for c in sorted([c for c in cands if c.get("playable") and c["pick"] != "Draw" and c["prob"] >= 0.75], key=lambda c: -c["prob"]):
+        if c["event_id"] not in seen:
+            seen.add(c["event_id"])
+            safe.append(c)
+    legs, tot, p = [], 1.0, 1.0
+    for c in safe:
+        if p * c["prob"] < 0.60:
+            continue
+        legs.append(c)
+        tot, p = tot * c["odds"], p * c["prob"]
+        if len(legs) >= 3 or tot >= 1.35:
+            break
+    if len(legs) < 2 or tot < 1.12:
+        legs = []
+    warn = []
+    try:
+        hcp = [h for h in _handicaps(_nba_spreads(cfg, env, today, launch), cfg, lo, hi) if h["prob"] >= 0.55 and h["odds"] >= 1.5]
+    except Exception as e:
+        hcp, warn = [], [f"handicaps NBA indisponibles ({str(e)[:80]})"]
+    hcp.sort(key=lambda h: -h["prob"] * h["odds"])
+    hcp = hcp[:2]
+    for c in legs + hcp:
+        c["tier"] = "deep"
+    try:
+        with open(_review_cache_file(today), encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        cache = {}
+    todo = [c for c in legs + hcp if review_key(c) not in cache]
+    waiting, fire = False, None
+    if launch and todo and cfg.get("claude", {}).get("source") == "claude_task" and env.get("GITHUB_TOKEN"):
+        n = sum(1 for k in rounds_asked(today) if "-deep" in k) + 1
+        key = f"{today.isoformat()}-deep{n}"
+        write_json(_asked_path(today), sorted(rounds_asked(today) | {key}))
+        task_request(todo, today, env, key)
+        fire = routine_launch(today, env, key)
+        waiting = True
+    elif todo and not launch:
+        prev = {}
+        try:
+            with open(_deep_path(today), encoding="utf-8") as f:
+                prev = json.load(f)
+        except (OSError, ValueError):
+            pass
+        waiting = bool(prev.get("waiting"))
+
+    def view(c):
+        v = cache.get(review_key(c)) or {}
+        return {"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c), "sport": c["sport"], "odds": round(c["odds"], 2),
+                "prob": round(c["prob"], 3), "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
+                "pick_team": c.get("team") or c["pick"], "league": c["league"], "verdict": v.get("verdict"), "resume": v.get("resume")}
+    combo = [view(c) for c in legs]
+    if any(x["verdict"] == "ecarte" for x in combo):
+        combo = []  # un match du combiné écarté par Claude : pas de combiné
+    out = {"date": today.isoformat(), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "waiting": waiting and bool(todo), "fire": fire,
+           "combo": {"legs": combo, "total_odds": round(math.prod(x["odds"] for x in combo), 2),
+                     "prob": round(math.prod(x["prob"] for x in combo), 3)} if combo else None,
+           "handicaps": [h for h in (view(c) for c in hcp) if h["verdict"] != "ecarte"], "warnings": warn}
+    write_json(_deep_path(today), out)
+    return out
