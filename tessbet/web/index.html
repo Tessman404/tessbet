@@ -935,7 +935,7 @@ function deepBlock() {
     box.replaceChildren(el('p', { text: '🔎 Analyse en cours…' }));
     try { show(await api('deep', 'POST', {})); } catch (e) { toast(e.message, true); show(null); }
   };
-  api('deep').then(r => show(r && (r.combo || (r.handicaps || []).length || r.waiting) ? r : null)).catch(() => show(null));
+  api('deep').then(r => show(r && r.launched ? r : null)).catch(() => show(null));
   return box;
 }
 

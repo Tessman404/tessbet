@@ -1705,6 +1705,28 @@ def deep_analysis(env=None, launch=False):
     cfg = load_config()
     now = now_utc()
     today = journee(now)
+    if not launch:  # simple relecture : seulement si l'analyse a été lancée, avec les avis de Claude arrivés depuis
+        try:
+            with open(_deep_path(today), encoding="utf-8") as f:
+                prev = json.load(f)
+        except (OSError, ValueError):
+            return {"launched": False}
+        if not prev.get("launched"):
+            return {"launched": False}
+        try:
+            with open(_review_cache_file(today), encoding="utf-8") as f:
+                cache = json.load(f)
+        except (OSError, ValueError):
+            cache = {}
+        rows = ((prev.get("combo") or {}).get("legs") or []) + (prev.get("handicaps") or [])
+        for x in rows:
+            v = cache.get(x.get("key")) or {}
+            x["verdict"], x["resume"] = v.get("verdict"), v.get("resume")
+        if prev.get("combo") and any(x["verdict"] == "ecarte" for x in prev["combo"]["legs"]):
+            prev["combo"] = None
+        prev["handicaps"] = [h for h in prev.get("handicaps") or [] if h["verdict"] != "ecarte"]
+        prev["waiting"] = bool(prev.get("waiting")) and any(x.get("verdict") is None for x in rows)
+        return prev
     lo, hi = day_window(today)
     events, _ = cached_events(cfg)
     events = [e for e in events if lo <= parse_iso(e["commence"]) < hi and parse_iso(e["commence"]) > now]
@@ -1724,11 +1746,17 @@ def deep_analysis(env=None, launch=False):
             break
     if len(legs) < 2 or tot < 1.12:
         legs = []
-    warn = []
+    warn, n_lines = [], 0
     try:
-        hcp = [h for h in _handicaps(_nba_spreads(cfg, env, today, launch), cfg, lo, hi) if h["prob"] >= 0.55 and h["odds"] >= 1.5]
+        allh = _handicaps(_nba_spreads(cfg, env, today, launch), cfg, lo, hi)
+        n_lines = len(allh)
+        hcp = [h for h in allh if h["prob"] >= 0.55 and h["odds"] >= 1.5]
+        if not allh:
+            warn.append("Pas de cote de handicap Winamax disponible pour les matchs NBA de cette nuit.")
+        elif not hcp:
+            warn.append("Aucun handicap NBA assez sûr avec une cote d'au moins 1,50 cette nuit.")
     except Exception as e:
-        hcp, warn = [], [f"handicaps NBA indisponibles ({str(e)[:80]})"]
+        hcp, warn = [], [f"Handicaps NBA indisponibles ({str(e)[:80]})."]
     hcp.sort(key=lambda h: -h["prob"] * h["odds"])
     hcp = hcp[:2]
     for c in legs + hcp:
@@ -1747,24 +1775,17 @@ def deep_analysis(env=None, launch=False):
         task_request(todo, today, env, key)
         fire = routine_launch(today, env, key)
         waiting = True
-    elif todo and not launch:
-        prev = {}
-        try:
-            with open(_deep_path(today), encoding="utf-8") as f:
-                prev = json.load(f)
-        except (OSError, ValueError):
-            pass
-        waiting = bool(prev.get("waiting"))
 
     def view(c):
         v = cache.get(review_key(c)) or {}
-        return {"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c), "sport": c["sport"], "odds": round(c["odds"], 2),
+        return {"key": review_key(c), "match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c), "sport": c["sport"], "odds": round(c["odds"], 2),
                 "prob": round(c["prob"], 3), "kickoff_local": to_paris(parse_iso(c["commence"])).strftime("%H:%M"),
                 "pick_team": c.get("team") or c["pick"], "league": c["league"], "verdict": v.get("verdict"), "resume": v.get("resume")}
     combo = [view(c) for c in legs]
     if any(x["verdict"] == "ecarte" for x in combo):
         combo = []  # un match du combiné écarté par Claude : pas de combiné
-    out = {"date": today.isoformat(), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "waiting": waiting and bool(todo), "fire": fire,
+    out = {"date": today.isoformat(), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "waiting": waiting and bool(todo), "fire": fire, "launched": True,
+           "nba_lines": n_lines,
            "combo": {"legs": combo, "total_odds": round(math.prod(x["odds"] for x in combo), 2),
                      "prob": round(math.prod(x["prob"] for x in combo), 3)} if combo else None,
            "handicaps": [h for h in (view(c) for c in hcp) if h["verdict"] != "ecarte"], "warnings": warn}
