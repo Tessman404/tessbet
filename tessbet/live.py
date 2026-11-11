@@ -719,7 +719,8 @@ def sync_proposals():
             have.add(k)
             shared.append({"id": "p" + hashlib.md5((day + x["match"] + pick).encode()).hexdigest()[:9], "date": day, "match": x["match"],
                            "pick": pick, "pick_team": x.get("pick_team"), "sport": x.get("sport") or "football", "league_key": x.get("league_key", ""),
-                           "kickoff": x.get("kickoff"), "odds": x.get("odds"), "tier": tier, "reported": None, "published": False})
+                           "kickoff": x.get("kickoff"), "odds": x.get("odds"), "tier": tier, "reported": None, "published": False,
+                           "prob": x.get("prob"), "note": x.get("note")})
             added += 1
         cb = d.get("combo")
         if cb and cb.get("legs"):
@@ -986,6 +987,48 @@ def publish(now=None):
     return True
 
 
+_learn_at = [0.0]
+SPORT_FR = {"football": "⚽ Foot", "basketball": "🏀 NBA", "tennis": "🎾 Tennis", "hockey": "🏒 Hockey", "americanfootball": "🏈 NFL"}
+
+
+def learning(now=None):
+    """Toutes les heures : Tessbet compare ses chances aux résultats réels. Le lundi matin, il envoie ce qu'il en tire."""
+    now = now or time.time()
+    if now - _learn_at[0] < 3600:
+        return None
+    _learn_at[0] = now
+    cal = engine.calibrate()
+    paris = engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc))
+    week = paris.strftime("%G-W%V")
+    t = _read("telegram.json", {})
+    send = {**{"bilan": True}, **(t.get("send") or {})}
+    if paris.weekday() != 0 or paris.hour < 9 or cal.get("sent_week") == week or not (t.get("chat") or {}).get("id") or not send["bilan"]:
+        return cal
+    lines = ["🧠 <b><u>Ce que Tessbet a appris cette semaine</u></b>",
+             "<i>Chances annoncées comparées aux résultats réels, depuis le début.</i>", ""]
+    for sp, g in sorted(cal["sports"].items(), key=lambda kv: -kv[1]["n"]):
+        if g["n"] < 5:
+            continue
+        gap = g["real_pct"] - g["expected_pct"]
+        how = ("✅ fiable" if abs(gap) <= 4 else "📉 trop optimiste" if gap < 0 else "📈 plutôt prudent")
+        act = ""
+        if g["active"] and g["ratio"] < 0.995:
+            act = f" → chances revues à la baisse de {round((1 - g['ratio']) * 100)} %"
+        elif not g["active"]:
+            act = f" (correction à partir de {engine.CAL_MIN_N} résultats)"
+        lines.append(f"{SPORT_FR.get(sp, sp)} : prévu {g['expected_pct']} %, réel <b>{g['real_pct']} %</b> sur {g['n']} – {how}{act}")
+    nl = [f"{k}/5 : {g['real_pct']} % gagnés ({g['n']})" for k, g in sorted(cal["notes"].items(), reverse=True) if g["n"] >= 3]
+    if nl:
+        lines += ["", "<b>Par note</b> : " + " · ".join(nl)]
+    try:
+        tg_send("\n".join(lines))
+        cal["sent_week"] = week
+        engine.write_json(engine._cal_path(), cal)
+    except Exception as e:
+        print("telegram (apprentissage) :", str(e)[:100], file=sys.stderr)
+    return cal
+
+
 def run_loop():
     while True:
         wait = 120
@@ -1012,4 +1055,8 @@ def run_loop():
             tg_results()
         except Exception as e:
             print("résultats Telegram :", str(e)[:100], file=sys.stderr)
+        try:
+            learning()
+        except Exception as e:
+            print("apprentissage :", str(e)[:100], file=sys.stderr)
         time.sleep(wait)

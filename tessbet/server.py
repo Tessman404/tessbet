@@ -1092,7 +1092,8 @@ def tg_share(body):
                     continue
                 shared[k] = {"id": s["id"], "date": d["date"], "match": s["match"], "pick": s["pick_label"],
                              "pick_team": s.get("pick_team"), "sport": s["sport"], "league_key": s.get("league_key", ""),
-                             "kickoff": s.get("kickoff"), "odds": s["odds"], "tier": s.get("tier", "fiable"), "reported": None}
+                             "kickoff": s.get("kickoff"), "odds": s["odds"], "tier": s.get("tier", "fiable"), "reported": None,
+                             "prob": s.get("prob"), "note": s.get("note")}
             for n in (d.get("claude_dropped_items") or []) + (d.get("near") or []):  # les « moins sûrs » sont suivis aussi, à part
                 nid = n.get("id") or "n" + hashlib.md5((d["date"] + n["match"] + n["pick_label"]).encode()).hexdigest()[:9]
                 k = (d["date"], n["match"], n["pick_label"])
@@ -1101,7 +1102,8 @@ def tg_share(body):
                 else:
                     shared[k] = {"id": nid, "date": d["date"], "match": n["match"], "pick": re.sub(r" \((bonne affaire|outsider)\)$", "", n["pick_label"]),
                                  "pick_team": n.get("pick_team"), "sport": n.get("sport") or "football", "league_key": n.get("league_key", ""),
-                                 "kickoff": n.get("kickoff"), "odds": n.get("odds"), "tier": "moins_sur", "reported": None}
+                                 "kickoff": n.get("kickoff"), "odds": n.get("odds"), "tier": "moins_sur", "reported": None,
+                                 "prob": n.get("prob"), "note": n.get("note")}
             if d.get("combo"):  # repère pour ne pas renvoyer le même combiné, et suivre son résultat
                 cm = "combo:" + "+".join(l["match"] for l in d["combo"]["legs"])
                 cid = "c" + hashlib.md5((d["date"] + cm).encode()).hexdigest()[:9]
@@ -1245,6 +1247,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, tg_status())
             if path == "/api/deep":  # analyse approfondie : relecture (verdicts de Claude arrivés entre-temps)
                 return self._send(200, engine.deep_analysis(launch=False))
+            if path == "/api/learning":  # ce que Tessbet a appris de ses résultats
+                return self._send(200, read_json(os.path.join(DATA, "calibration.json"), {}) or engine.calibrate())
             if path == "/api/live/pronos":
                 return self._send(200, live_pronos())
             if path == "/api/proposals":  # tous les pronos suivis et leur résultat (sans rien envoyer)

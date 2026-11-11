@@ -234,6 +234,7 @@ def analyse_event(ev, cfg):
         if n == "Draw" and cfg["selection"].get("exclude_draw", True):
             continue
         fair = sum(w * v for w, v in zip(weights, probs[n])) / wsum
+        fair = calibrated(ev["sport"], fair)  # correction apprise des résultats passés
         disp = pstdev(probs[n]) if len(probs[n]) > 1 else 0.0
         agree = 0
         for i in range(len(books)):
@@ -1790,4 +1791,86 @@ def deep_analysis(env=None, launch=False):
                      "prob": round(math.prod(x["prob"] for x in combo), 3)} if combo else None,
            "handicaps": [h for h in (view(c) for c in hcp) if h["verdict"] != "ecarte"], "warnings": warn}
     write_json(_deep_path(today), out)
+    return out
+
+
+# ------------------------------------------------------------------ apprentissage : Tessbet compare ses chances aux résultats réels
+CAL_MIN_N = 15     # nombre de résultats minimum avant de corriger un sport
+CAL_SHRINK = 10    # prudence : les premiers écarts comptent peu
+_cal = {"mtime": None, "data": {}}
+
+
+def _cal_path():
+    return os.path.join(DATA, "calibration.json")
+
+
+def calibrated(sport, p):
+    """Chances corrigées selon ce que Tessbet a vraiment réussi dans ce sport (rien tant qu'il n'y a pas assez de résultats)."""
+    path = _cal_path()
+    try:
+        m = os.path.getmtime(path)
+        if m != _cal["mtime"]:
+            with open(path, encoding="utf-8") as f:
+                _cal.update(mtime=m, data=json.load(f))
+    except (OSError, ValueError):
+        return p
+    s = (_cal["data"].get("sports") or {}).get(sport) or {}
+    if not s.get("active"):
+        return p
+    return max(0.01, min(0.99, p * s["ratio"]))
+
+
+def calibrate():
+    """Compare, par sport et par note, les chances annoncées aux résultats réels, et en tire une correction prudente."""
+    try:
+        with open(os.path.join(DATA, "telegram.json"), encoding="utf-8") as f:
+            shared = json.load(f).get("shared") or []
+    except (OSError, ValueError):
+        shared = []
+    hist = {}
+
+    def lookup(x):
+        if x.get("prob"):
+            return x["prob"], x.get("note")
+        d = hist.get(x["date"])
+        if d is None:
+            try:
+                with open(os.path.join(DATA, "history", f"{x['date']}.json"), encoding="utf-8") as f:
+                    d = json.load(f)
+            except (OSError, ValueError):
+                d = {}
+            hist[x["date"]] = d
+        for r in (d.get("selections") or []) + (d.get("near") or []) + ((d.get("combo") or {}).get("legs") or []):
+            if r.get("match") == x["match"] and r.get("prob"):
+                return r["prob"], r.get("note")
+        return None, None
+    sports, notes = {}, {}
+    for x in shared:
+        if x.get("tier") == "combo_marker" or x.get("reported") not in ("win", "lose"):
+            continue
+        p, note = lookup(x)
+        if not p:
+            continue
+        for key, box in ((x.get("sport") or "football", sports), (note, notes)):
+            if key is None:
+                continue
+            g = box.setdefault(str(key), {"n": 0, "wins": 0, "expected": 0.0})
+            g["n"] += 1
+            g["wins"] += x["reported"] == "win"
+            g["expected"] += p
+    for g in list(sports.values()) + list(notes.values()):
+        g["expected"] = round(g["expected"], 2)
+        g["real_pct"] = round(g["wins"] * 100 / g["n"])
+        g["expected_pct"] = round(g["expected"] * 100 / g["n"])
+    for g in sports.values():
+        g["ratio"] = round(max(0.92, min(1.03, (g["wins"] + CAL_SHRINK) / (g["expected"] + CAL_SHRINK))), 3)
+        g["active"] = g["n"] >= CAL_MIN_N
+    out = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "sports": sports, "notes": notes,
+           "sent_week": (_cal["data"] or {}).get("sent_week")}
+    try:
+        with open(_cal_path(), encoding="utf-8") as f:
+            out["sent_week"] = json.load(f).get("sent_week")
+    except (OSError, ValueError):
+        pass
+    write_json(_cal_path(), out)
     return out

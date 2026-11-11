@@ -1707,6 +1707,7 @@ function renderSettings(st) {
         notifBtn,
         el('p', { class: 'note', id: 'notifstatus', text: state.today && state.today.notification ? 'iPhone : ' + state.today.notification : '' })),
       tgPanel(),
+      learnPanel(),
       el('div', { class: 'panel' }, el('h2', { text: 'Limite de mise par jour' }),
         el('div', { class: 'settings' }, cap, '€',
           el('button', { class: 'btn small', type: 'button', text: 'Enregistrer', onclick: async () => {
@@ -1730,6 +1731,22 @@ function outsiderPanel(st) {
     row('🎲 Par outsider', 'outsider_stake', st.outsider_stake),
     row('🎟️ Par combiné du jour', 'combo_stake', st.combo_stake),
     el('p', { class: 'note', text: 'Toujours la même petite mise : c\'est ce qui permet de tenir les séries de défaites, normales avec des outsiders et des combinés.' }));
+}
+
+/* Ce que Tessbet a appris de ses résultats (chances annoncées vs résultats réels). */
+function learnPanel() {
+  const SP = { football: '⚽ Foot', basketball: '🏀 NBA', tennis: '🎾 Tennis', hockey: '🏒 Hockey', americanfootball: '🏈 NFL' };
+  const box = el('div', { class: 'panel' }, el('h2', { text: '🧠 Ce que Tessbet apprend' }),
+    el('p', { class: 'note', text: 'Tessbet compare ses chances annoncées aux résultats réels. Quand un sport se trompe trop souvent (au moins 15 résultats), ses chances sont revues à la baisse automatiquement. Récap sur Telegram chaque lundi.' }));
+  api('learning').then(c => {
+    const rows = Object.entries(c.sports || {}).sort((a, b) => b[1].n - a[1].n);
+    if (!rows.length) { box.append(el('p', { text: 'Pas encore assez de résultats.' })); return; }
+    box.append(el('ul', {}, rows.map(([k, g]) => el('li', {},
+      el('b', { text: (SP[k] || k) + ' : ' }), `prévu ${g.expected_pct} %, réel ${g.real_pct} % (${g.n} résultats)`,
+      g.active && g.ratio < 0.995 ? el('small', { text: ` – chances revues à la baisse de ${Math.round((1 - g.ratio) * 100)} %` })
+        : !g.active ? el('small', { text: ' – pas encore assez de résultats pour corriger' }) : el('small', { text: ' – fiable' })))));
+  }).catch(() => {});
+  return box;
 }
 
 function tgPanel() {
