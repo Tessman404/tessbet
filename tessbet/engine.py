@@ -1598,31 +1598,6 @@ def notify_current(force=False, offset=0):
     return status
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "notify-test":
-        cfg, env = load_config(), load_env()
-        n = cfg["notify"]
-        print("Envoi d'un message de test vers :", n.get("service"))
-        if not n.get("service", "").startswith("mobile_app_"):
-            sys.exit("Le service doit être un téléphone (mobile_app_...).")
-        ha_post(f"{env['HA_URL'].rstrip('/')}/api/services/notify/{n['service']}", env["HA_TOKEN"],
-                {"title": "Tessbet", "message": "Test réussi : Tessbet est relié à ton téléphone.",
-                 "data": {"tag": "tessbet-test"}})
-        print("Message de test envoyé.")
-        sys.exit(0)
-    if len(sys.argv) > 1 and sys.argv[1] == "notify-now":
-        print(notify_current(force=True, offset=1 if "demain" in sys.argv[2:] else 0))
-        sys.exit(0)
-    mode_arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("demo", "live") else None
-    res = run(mode_arg)
-    print(f"[{res['mode']}] {res['message']}")
-    for s in res["selections"]:
-        print(f"  {s['kickoff_local']} {s['match']} -> {s['pick_label']} @ {s['odds']} "
-              f"({round(s['prob'] * 100)} %, {s['confidence']})")
-    for w in res["warnings"]:
-        print("  ! " + w)
-    print("  notification :", res.get("notification", "aucune"))
-
 
 # ------------------------------------------------------------------ analyse approfondie (bouton, jours sans prono)
 NBA_MARGIN_SD = 12.0  # écart-type de l'écart final en NBA (points)
@@ -1874,3 +1849,30 @@ def calibrate():
         pass
     write_json(_cal_path(), out)
     return out
+
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "notify-test":
+        cfg, env = load_config(), load_env()
+        n = cfg["notify"]
+        print("Envoi d'un message de test vers :", n.get("service"))
+        if not n.get("service", "").startswith("mobile_app_"):
+            sys.exit("Le service doit être un téléphone (mobile_app_...).")
+        ha_post(f"{env['HA_URL'].rstrip('/')}/api/services/notify/{n['service']}", env["HA_TOKEN"],
+                {"title": "Tessbet", "message": "Test réussi : Tessbet est relié à ton téléphone.",
+                 "data": {"tag": "tessbet-test"}})
+        print("Message de test envoyé.")
+        sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == "notify-now":
+        print(notify_current(force=True, offset=1 if "demain" in sys.argv[2:] else 0))
+        sys.exit(0)
+    mode_arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("demo", "live") else None
+    res = run(mode_arg)
+    print(f"[{res['mode']}] {res['message']}")
+    for s in res["selections"]:
+        print(f"  {s['kickoff_local']} {s['match']} -> {s['pick_label']} @ {s['odds']} "
+              f"({round(s['prob'] * 100)} %, {s['confidence']})")
+    for w in res["warnings"]:
+        print("  ! " + w)
+    print("  notification :", res.get("notification", "aucune"))
