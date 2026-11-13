@@ -75,8 +75,14 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .wxprep li.done label { opacity: .5; text-decoration: line-through; }
 .btn.wx { background: #e10600; color: #fff; }
 .deep h3 { margin-top: 0; }
-.deepopt { margin: 10px 0; }
-.deepopt ul { margin: 4px 0; padding-left: 18px; }
+.deep, .deep summary, .deepopt, .deepopt li, .deepopt p { color: #fff; opacity: 1; }
+.deep summary { font-weight: 700; font-size: 1.05rem; cursor: pointer; }
+.deepopt { margin: 14px 0; padding: 12px; background: rgba(255,255,255,.06); border-radius: 10px; }
+.deepopt > b { color: var(--yellow); font-size: 1.05rem; }
+.deepopt ul { margin: 8px 0 0; padding-left: 18px; }
+.deepopt li { margin: 8px 0; line-height: 1.4; }
+.deepopt li b { color: #fff; }
+.deepopt li small { display: block; color: var(--chalk); font-size: .88rem; }
 .livehead { margin: 22px 0 10px; font-size: 1.1rem; }
 .reportbtns .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
 .newsline { margin: 4px 0 10px; font-weight: 600; }
@@ -920,7 +926,8 @@ function freebetBlock() {
       box.append(el('p', { class: 'whysub', text: 'Pour un free bet uniquement : la mise ne t\'appartient pas, donc tu peux viser gros. Combinés avec le plus de chances de passer pour cette cote, à partir des cotes Winamax de la dernière analyse.' }));
       r.combos.forEach(c => box.append(el('div', { class: 'deepopt' },
         el('b', { text: `Cote ${odds(c.total_odds)} – environ 1 chance sur ${Math.max(2, Math.round(1 / c.prob))}` }),
-        el('ul', {}, c.legs.map(l => el('li', {}, (l.verdict === 'confirme' ? '✅ ' : '') + `${SPORT[l.sport] || ''} ${l.pick_label} @ ${odds(l.odds)} · ${l.match} · ${l.when}`))))));
+        el('ul', {}, c.legs.map(l => el('li', {}, (l.verdict === 'confirme' ? '✅ ' : '') + `${SPORT[l.sport] || ''} `,
+          el('b', { text: `${l.pick_label} @ ${odds(l.odds)}` }), el('small', { text: `${l.match} · ${l.when}` })))))));
       box.append(el('p', { class: 'note', text: 'Vérifie les cotes sur Winamax (elles bougent). Hockey : pari « Résultat » = cote plus haute mais le nul à 60 min fait perdre.' }));
     } catch (e) { box.lastChild.remove(); box.append(el('p', { text: e.message })); }
   });
