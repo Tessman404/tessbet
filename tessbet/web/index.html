@@ -913,7 +913,7 @@ function comboCard(cb) {
 /* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
 /* Combiné free bet : grosse cote (10-20) avec le plus de chances possible, sans crédit. */
 function freebetBlock() {
-  const box = el('details', { class: 'panel deep' }, el('summary', { text: '🎰 Combiné free bet (cote 10 à 20)' }));
+  const box = el('details', { class: 'panel deep' }, el('summary', { text: '🎰 Pronos à grosse cote (free bet, cote 10 à 20)' }));
   let loaded = false;
   box.addEventListener('toggle', async () => {
     if (!box.open || loaded) return;
