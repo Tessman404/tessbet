@@ -1249,6 +1249,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, engine.deep_analysis(launch=False))
             if path == "/api/learning":  # ce que Tessbet a appris de ses résultats
                 return self._send(200, read_json(os.path.join(DATA, "calibration.json"), {}) or engine.calibrate())
+            if path == "/api/freebet":  # combiné free bet (cote 10-20), sans crédit
+                return self._send(200, engine.freebet_combos())
             if path == "/api/live/pronos":
                 return self._send(200, live_pronos())
             if path == "/api/proposals":  # tous les pronos suivis et leur résultat (sans rien envoyer)

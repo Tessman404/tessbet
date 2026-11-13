@@ -1852,6 +1852,57 @@ def calibrate():
 
 
 
+
+# ------------------------------------------------------------------ combiné free bet (grosse cote, chances maximales)
+def freebet_combos(targets=((10, 13), (16, 22))):
+    """Pour un free bet : le combiné qui a le PLUS de chances de passer pour une cote totale visée (10-13 puis 16-22).
+    Sans crédit : cotes Winamax de la dernière analyse (aujourd'hui et demain), matchs écartés par Claude exclus."""
+    cfg = load_config()
+    now = now_utc()
+    today = journee(now)
+    lo, _ = day_window(today)
+    _, hi = day_window(today + dt.timedelta(days=1))
+    events, _ = cached_events(cfg)
+    cache = {}
+    for d in (today, today + dt.timedelta(days=1)):
+        try:
+            with open(_review_cache_file(d), encoding="utf-8") as f:
+                cache.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+    best = {}
+    for ev in events:
+        t = parse_iso(ev["commence"])
+        if not (lo <= t < hi) or t <= now + dt.timedelta(minutes=10):
+            continue
+        for c in analyse_event(ev, cfg):
+            c = finalize(c)
+            v = (cache.get(review_key(c)) or {}).get("verdict")
+            if not c.get("playable") or c["pick"] == "Draw" or v == "ecarte" or c["prob"] < 0.5 or not 1.08 <= c["odds"] <= 3.5:
+                continue
+            c["verdict"] = v
+            if c["prob"] > best.get(c["event_id"], {}).get("prob", 0):
+                best[c["event_id"]] = c
+    pool = sorted(best.values(), key=lambda c: math.log(c["prob"]) / math.log(c["odds"]), reverse=True)  # chances perdues par point de cote
+    out = []
+    for lo_t, hi_t in targets:
+        legs, tot = [], 1.0
+        for c in pool:
+            if tot * c["odds"] > hi_t * 1.15:
+                continue
+            legs.append(c)
+            tot *= c["odds"]
+            if tot >= lo_t or len(legs) >= 8:
+                break
+        if tot < lo_t:
+            continue
+        p = math.prod(c["prob"] for c in legs)
+        out.append({"target": f"{lo_t}-{hi_t}", "total_odds": round(tot, 2), "prob": round(p, 3), "legs": [
+            {"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c), "odds": round(c["odds"], 2), "prob": round(c["prob"], 3),
+             "sport": c["sport"], "league": c["league"], "verdict": c.get("verdict"),
+             "when": to_paris(parse_iso(c["commence"])).strftime("%d/%m %H:%M")} for c in sorted(legs, key=lambda c: c["commence"])]})
+    return {"combos": out, "events": len(best), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "notify-test":
         cfg, env = load_config(), load_env()

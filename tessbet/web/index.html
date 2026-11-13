@@ -905,6 +905,28 @@ function comboCard(cb) {
 }
 
 /* Les paris d'un jour : tickets, ou message qui dit quoi faire. */
+/* Combiné free bet : grosse cote (10-20) avec le plus de chances possible, sans crédit. */
+function freebetBlock() {
+  const box = el('details', { class: 'panel deep' }, el('summary', { text: '🎰 Combiné free bet (cote 10 à 20)' }));
+  let loaded = false;
+  box.addEventListener('toggle', async () => {
+    if (!box.open || loaded) return;
+    loaded = true;
+    box.append(el('p', { text: 'Calcul…' }));
+    try {
+      const r = await api('freebet');
+      box.lastChild.remove();
+      if (!r.combos.length) { box.append(el('p', { text: 'Pas assez de matchs dans la dernière analyse pour monter à 10. Relance une analyse et réessaie.' })); return; }
+      box.append(el('p', { class: 'whysub', text: 'Pour un free bet uniquement : la mise ne t\'appartient pas, donc tu peux viser gros. Combinés avec le plus de chances de passer pour cette cote, à partir des cotes Winamax de la dernière analyse.' }));
+      r.combos.forEach(c => box.append(el('div', { class: 'deepopt' },
+        el('b', { text: `Cote ${odds(c.total_odds)} – environ 1 chance sur ${Math.max(2, Math.round(1 / c.prob))}` }),
+        el('ul', {}, c.legs.map(l => el('li', {}, (l.verdict === 'confirme' ? '✅ ' : '') + `${SPORT[l.sport] || ''} ${l.pick_label} @ ${odds(l.odds)} · ${l.match} · ${l.when}`))))));
+      box.append(el('p', { class: 'note', text: 'Vérifie les cotes sur Winamax (elles bougent). Hockey : pari « Résultat » = cote plus haute mais le nul à 60 min fait perdre.' }));
+    } catch (e) { box.lastChild.remove(); box.append(el('p', { text: e.message })); }
+  });
+  return box;
+}
+
 /* Analyse approfondie : des valeurs sûres les jours où Tessbet ne propose (presque) rien. */
 let deepTimer = null;
 function deepBlock() {
@@ -951,6 +973,7 @@ function daySection(i, multi) {
   if (i.kind === 'done' && i.picks) sec.append(el('p', { class: 'summary', text: d.message || '' }));
   if (i.kind === 'done' && d.news != null) sec.append(el('p', { class: 'newsline', text: newsText(d) }));
   if (i.kind === 'done' && d === state.today && (d.selections || []).length < 2) sec.append(deepBlock());
+  if (i.kind === 'done' && d === state.today) sec.append(freebetBlock());
   const box = el('div', { class: 'cols' });
   if (i.kind === 'todo') {
     const last = today && d.generated_at && d.date !== i.date ? fmtDay(d.date) : null;
