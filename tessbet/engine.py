@@ -1903,9 +1903,12 @@ def freebet_combos(targets=((10, 13), (16, 22))):
              "when": to_paris(parse_iso(c["commence"])).strftime("%d/%m %H:%M")} for c in sorted(legs, key=lambda c: c["commence"])]})
     res = {"combos": out, "events": len(best), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
     if out:  # gardé pour l'historique (jamais compté dans les bilans ni publié)
+        by_match = {f"{c['home']} – {c['away']}": c for c in best.values()}
         for c in out:
-            for l, src in zip(c["legs"], sorted(legs_all(c, best), key=lambda x: x["commence"])):
-                l.update(pick_team=src.get("team") or src["pick"], kickoff=src["commence"], league_key=src.get("league_key", ""))
+            for l in c["legs"]:
+                src = by_match.get(l["match"])
+                if src:
+                    l.update(pick_team=src.get("team") or src["pick"], kickoff=src["commence"], league_key=src.get("league_key", ""))
         write_json(os.path.join(DATA, f"freebet_{today.isoformat()}.json"), res)
     return res
 
