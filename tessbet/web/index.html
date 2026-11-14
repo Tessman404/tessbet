@@ -1370,6 +1370,10 @@ function drawHistory() {
         el('small', { text: `${p.match}` + (p.kickoff_local ? ` · ${p.kickoff_local}` : '') + (p.score ? ` · score ${p.score}` : '') })))))));
     if (d.combo) detail.append(el('div', { class: 'panel histgrp' }, el('h3', { text: `🎟️ Combiné du jour ${mark(d.combo.reported)} – cote ${odds(d.combo.total_odds)}` }),
       el('ul', {}, d.combo.legs.map(p => el('li', {}, `${mark(p.reported)} `, el('b', { text: p.pick_label }), el('small', { text: p.match + (p.score ? ` · score ${p.score}` : '') }))))));
+    (d.big || []).forEach(c => detail.append(el('div', { class: 'panel histgrp' },
+      el('h3', { text: `🎰 Grosse cote ${mark(c.reported)} – cote ${odds(c.total_odds)} (1 chance sur ${Math.max(2, Math.round(1 / c.prob))})` }),
+      el('ul', {}, c.legs.map(p => el('li', {}, `${mark(p.reported)} ${SPORT[p.sport] || ''} `, el('b', { text: p.pick_label }), ` @ ${odds(p.odds)}`,
+        el('small', { text: p.match + (p.score ? ` · score ${p.score}` : '') })))))));
     if (d.bets.length) detail.append(el('div', { class: 'panel histgrp' }, el('h3', { text: '💶 Mes paris ce jour-là' }),
       el('ul', {}, d.bets.map(b => el('li', {}, `${mark(b.result)} `, el('b', { text: b.legs ? `Combiné (${b.legs} matchs)` : `${b.match} – ${b.pick}` }),
         ` @ ${odds(b.odds)} · mise ${eur(b.stake)}`)))));

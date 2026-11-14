@@ -1901,7 +1901,19 @@ def freebet_combos(targets=((10, 13), (16, 22))):
             {"match": f"{c['home']} – {c['away']}", "pick_label": pick_label(c), "odds": round(c["odds"], 2), "prob": round(c["prob"], 3),
              "sport": c["sport"], "league": c["league"], "verdict": c.get("verdict"),
              "when": to_paris(parse_iso(c["commence"])).strftime("%d/%m %H:%M")} for c in sorted(legs, key=lambda c: c["commence"])]})
-    return {"combos": out, "events": len(best), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    res = {"combos": out, "events": len(best), "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if out:  # gardé pour l'historique (jamais compté dans les bilans ni publié)
+        for c in out:
+            for l, src in zip(c["legs"], sorted(legs_all(c, best), key=lambda x: x["commence"])):
+                l.update(pick_team=src.get("team") or src["pick"], kickoff=src["commence"], league_key=src.get("league_key", ""))
+        write_json(os.path.join(DATA, f"freebet_{today.isoformat()}.json"), res)
+    return res
+
+
+def legs_all(combo, best):
+    """Retrouve les matchs d'origine d'un combiné free bet (pour noter l'équipe et l'heure)."""
+    names = {l["match"] for l in combo["legs"]}
+    return [c for c in best.values() if f"{c['home']} – {c['away']}" in names]
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "notify-test":
