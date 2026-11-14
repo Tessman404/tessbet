@@ -75,6 +75,21 @@ header .date { margin: 6px 0 0; color: var(--chalk-dim); font-size: .95rem; }
 .wxprep li.done label { opacity: .5; text-decoration: line-through; }
 .btn.wx { background: #e10600; color: #fff; }
 .deep h3 { margin-top: 0; }
+.calnav { display: flex; align-items: center; justify-content: space-between; }
+.calnav h2 { margin: 0; font-size: 1.1rem; }
+.calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 12px 0 6px; }
+.calhead { text-align: center; font-size: .8rem; color: var(--chalk-dim); }
+.calday { aspect-ratio: 1; border: 0; border-radius: 8px; background: var(--turf-3); color: #fff; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; font: inherit; cursor: pointer; padding: 0; }
+.calday small { font-size: .7rem; opacity: .95; }
+.calday.empty { background: transparent; color: var(--chalk-dim); cursor: default; }
+.calday.good { background: #1f7a4a; } .calday.mixed { background: #a8661a; } .calday.bad { background: #9b2c2e; }
+.calday.sel { outline: 3px solid var(--yellow); }
+.calday.today b { text-decoration: underline; }
+.histgrp h3 { margin: 0 0 6px; }
+.histgrp ul { margin: 0; padding-left: 18px; }
+.histgrp li { margin: 8px 0; color: #fff; }
+.histgrp li small { display: block; color: var(--chalk); }
 .deep, .deep summary, .deepopt, .deepopt li, .deepopt p { color: #fff; opacity: 1; }
 .deep summary { font-weight: 700; font-size: 1.05rem; cursor: pointer; }
 .deepopt { margin: 14px 0; padding: 12px; background: rgba(255,255,255,.06); border-radius: 10px; }
@@ -504,6 +519,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
     <button type="button" data-tab="bet">Matchs</button>
     <button type="button" data-tab="live">En direct</button>
     <button type="button" data-tab="track">Mes mises</button>
+    <button type="button" data-tab="past">Historique</button>
     <button type="button" data-tab="settings">Réglages</button>
   </nav>
 </div></div>
@@ -534,7 +550,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
   </section>
 
   <section id="tab-past" hidden>
-    <div class="pagehead"><h1>Passés</h1></div>
+    <div class="pagehead"><h1>Historique</h1></div>
     <div id="past"></div>
   </section>
 
@@ -1312,6 +1328,54 @@ function pastBet(b) {
     legs);
 }
 
+/* Historique : un calendrier ; chaque jour montre les pronos proposés, leur résultat et tes paris. */
+const hist = { month: null, cal: null, day: null };
+async function renderHistory() {
+  hist.cal = await api('history/calendar');
+  if (!hist.month) hist.month = hist.cal.today.slice(0, 7);
+  if (!hist.day) hist.day = Object.keys(hist.cal.days).sort().pop() || hist.cal.today;
+  drawHistory();
+}
+function drawHistory() {
+  const box = document.getElementById('past'); box.replaceChildren();
+  const [y, m] = hist.month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1), nDays = new Date(y, m, 0).getDate(), lead = (first.getDay() + 6) % 7;
+  const label = first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const shift = n => { const d = new Date(y, m - 1 + n, 1); hist.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; drawHistory(); };
+  const grid = el('div', { class: 'calgrid' }, ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => el('span', { class: 'calhead', text: x })));
+  for (let i = 0; i < lead; i++) grid.append(el('span'));
+  for (let d = 1; d <= nDays; d++) {
+    const key = `${hist.month}-${String(d).padStart(2, '0')}`, info = hist.cal.days[key];
+    const cls = ['calday', info ? (info.lose === 0 && info.win ? 'good' : info.lose > info.win ? 'bad' : info.win || info.lose ? 'mixed' : 'has') : 'empty',
+      key === hist.day ? 'sel' : '', key === hist.cal.today ? 'today' : ''].join(' ');
+    grid.append(el('button', { class: cls, type: 'button', disabled: !info, 'aria-label': key, onclick: () => { hist.day = key; drawHistory(); } },
+      el('b', { text: String(d) }), info && (info.win || info.lose) ? el('small', { text: `${info.win}/${info.win + info.lose}` }) : info && info.bets ? el('small', { text: '•' }) : null));
+  }
+  box.append(el('div', { class: 'panel calbox' },
+    el('div', { class: 'calnav' }, el('button', { class: 'btn small', type: 'button', text: '‹', 'aria-label': 'Mois précédent', onclick: () => shift(-1) }),
+      el('h2', { text: label.charAt(0).toUpperCase() + label.slice(1) }),
+      el('button', { class: 'btn small', type: 'button', text: '›', 'aria-label': 'Mois suivant', onclick: () => shift(1) })),
+    grid, el('p', { class: 'note', text: '🟩 tout gagné · 🟧 mélangé · 🟥 plus de perdus · le chiffre = pronos gagnés / terminés' })));
+  const detail = el('div', { id: 'histday' }, el('p', { text: 'Chargement…' }));
+  box.append(detail);
+  api('history/day?date=' + hist.day).then(d => {
+    detail.replaceChildren(el('h2', { class: 'section', text: fmtDay(d.date) }));
+    const mark = r => ({ win: '✅', lose: '❌', void: '↩️', unknown: '❔' })[r] || '⏳';
+    const TIER = { fiable: '🎯 Pronos de confiance', value: '💡 Bonnes affaires', outsider: '🎲 Outsiders', extra: '⚽ Autres paris foot', moins_sur: '🤔 Moins sûrs' };
+    const groups = Object.keys(TIER).map(t => [t, d.pronos.filter(p => p.tier === t)]).filter(g => g[1].length);
+    if (!groups.length && !d.combo) detail.append(el('p', { class: 'note', text: d.message || 'Pas de prono ce jour-là.' }));
+    groups.forEach(([t, ps]) => detail.append(el('div', { class: 'panel histgrp' }, el('h3', { text: TIER[t] }),
+      el('ul', {}, ps.map(p => el('li', {}, `${mark(p.reported)} ${SPORT[p.sport] || ''} `, el('b', { text: p.pick_label }),
+        ` @ ${odds(p.odds)}` + (p.note ? ` · ${p.note}/5` : ''),
+        el('small', { text: `${p.match}` + (p.kickoff_local ? ` · ${p.kickoff_local}` : '') + (p.score ? ` · score ${p.score}` : '') })))))));
+    if (d.combo) detail.append(el('div', { class: 'panel histgrp' }, el('h3', { text: `🎟️ Combiné du jour ${mark(d.combo.reported)} – cote ${odds(d.combo.total_odds)}` }),
+      el('ul', {}, d.combo.legs.map(p => el('li', {}, `${mark(p.reported)} `, el('b', { text: p.pick_label }), el('small', { text: p.match + (p.score ? ` · score ${p.score}` : '') }))))));
+    if (d.bets.length) detail.append(el('div', { class: 'panel histgrp' }, el('h3', { text: '💶 Mes paris ce jour-là' }),
+      el('ul', {}, d.bets.map(b => el('li', {}, `${mark(b.result)} `, el('b', { text: b.legs ? `Combiné (${b.legs} matchs)` : `${b.match} – ${b.pick}` }),
+        ` @ ${odds(b.odds)} · mise ${eur(b.stake)}`)))));
+  }).catch(e => detail.replaceChildren(el('p', { text: e.message })));
+}
+
 function renderPast(days) {
   const box = document.getElementById('past'); box.replaceChildren();
   const byDate = {};
@@ -1899,7 +1963,7 @@ async function showTab(t) {
   clearInterval(liveTimer); liveTimer = null;
   renderSlipbar();
   try {
-    if (t === 'past') { const [h] = await Promise.all([api('history'), loadBets(), loadStats()]); renderPast(h.days); }
+    if (t === 'past') await renderHistory();
     if (t === 'track') { await Promise.all([loadStats(), loadBets()]); renderTrack(); }
     if (t === 'settings') { await Promise.all([loadStats(), loadToday(), loadSettings()]); renderSettings(state.settings); }
     if (t === 'today') { await Promise.all([loadToday(), loadBets(), loadSettings(), loadStats()]); renderToday(); watchWaiting(); }

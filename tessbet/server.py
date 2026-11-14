@@ -692,6 +692,59 @@ def get_history(limit=60):
     return {"days": days}
 
 
+def _results_by_day():
+    """Résultats suivis (publiés ou non), par jour puis par match."""
+    out = {}
+    for x in read_json(TG_PATH, {}).get("shared") or []:
+        if x.get("reported") == "doublon":
+            continue
+        out.setdefault(x.get("date"), {})[x.get("match")] = x
+    return out
+
+
+def history_calendar():
+    """Pour le calendrier : chaque jour avec des pronos, son nombre de gagnés / perdus / en attente, et tes paris."""
+    folder = os.path.join(DATA, "history")
+    today = today_paris()
+    res = _results_by_day()
+    bets = {}
+    for b in load_bets()["bets"]:
+        bets.setdefault(b.get("date"), []).append(b)
+    days = {}
+    for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        d = name[:10]
+        if d > today:
+            continue
+        items = [x for x in res.get(d, {}).values() if x.get("tier") != "combo_marker"]
+        days[d] = {"win": sum(x.get("reported") == "win" for x in items), "lose": sum(x.get("reported") == "lose" for x in items),
+                   "wait": sum(not x.get("reported") for x in items), "bets": len(bets.get(d, []))}
+    for d, bl in bets.items():
+        if d and d <= today:
+            days.setdefault(d, {"win": 0, "lose": 0, "wait": 0, "bets": len(bl)})
+    return {"days": days, "today": today}
+
+
+def history_day(day):
+    """Le détail d'un jour : pronos proposés avec leur résultat, combiné, et tes paris."""
+    d = read_json(os.path.join(DATA, "history", f"{day}.json"), {}) or {}
+    res = _results_by_day().get(day, {})
+
+    def row(x, tier):
+        r = res.get(x.get("match")) or {}
+        return {"match": x.get("match"), "pick_label": x.get("pick_label"), "sport": x.get("sport"), "odds": x.get("odds"),
+                "prob": x.get("prob"), "note": x.get("note"), "kickoff_local": x.get("kickoff_local"), "tier": tier,
+                "reported": r.get("reported"), "score": r.get("score")}
+    rows = [row(x, x.get("tier", "fiable")) for x in d.get("selections") or []] + [row(x, "moins_sur") for x in d.get("near") or []]
+    combo = None
+    if d.get("combo"):
+        cm = res.get("combo:" + "+".join(l["match"] for l in d["combo"]["legs"])) or {}
+        combo = {"total_odds": d["combo"].get("total_odds"), "reported": cm.get("reported"),
+                 "legs": [row(l, "combo") for l in d["combo"]["legs"]]}
+    bets = [{k: b.get(k) for k in ("match", "pick", "odds", "stake", "result", "book", "boost", "cashout")} | {"legs": len(b.get("legs") or [])}
+            for b in load_bets()["bets"] if b.get("date") == day]
+    return {"date": day, "pronos": rows, "combo": combo, "bets": bets, "message": d.get("message")}
+
+
 def bets_payload():
     """Les paris avec leur état en direct ; un combiné porte l'état de chacun de ses matchs."""
     lvs = read_json(os.path.join(DATA, "live.json"), {})
@@ -1223,6 +1276,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"keys": sorted(k for k in keys if k)})
             if path == "/api/history":
                 return self._send(200, get_history())
+            if path == "/api/history/calendar":
+                return self._send(200, history_calendar())
+            if path == "/api/history/day":
+                day = (parse_qs(urlparse(self.path).query).get("date") or [""])[0]
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+                    return self._send(400, {"error": "Date invalide."})
+                return self._send(200, history_day(day))
             if path == "/api/apifootball/test":  # diagnostic : l'offre API-Football donne-t-elle accès aux matchs du jour ?
                 key = engine.load_env().get("API_FOOTBALL_KEY")
                 out = {"key": bool(key)}
