@@ -742,26 +742,7 @@ def history_day(day):
                  "legs": [row(l, "combo") for l in d["combo"]["legs"]]}
     bets = [{k: b.get(k) for k in ("match", "pick", "odds", "stake", "result", "book", "boost", "cashout")} | {"legs": len(b.get("legs") or [])}
             for b in load_bets()["bets"] if b.get("date") == day]
-    fb = read_json(os.path.join(DATA, f"freebet_{day}.json"), {}) or {}
-    big = []
-    if fb.get("combos"):
-        import live
-        cache = {}
-        for c in fb["combos"]:
-            legs = []
-            for l in c["legs"]:
-                r = res.get(l["match"]) or {}
-                rep, sc = r.get("reported"), r.get("score")
-                if rep not in ("win", "lose") and l.get("kickoff"):
-                    try:
-                        rep, sc = live.leg_outcome({**l, "pick": l["pick_label"]}, time.time(), cache)
-                    except Exception:
-                        rep = None
-                legs.append({**l, "reported": rep if rep in ("win", "lose", "void") else None, "score": sc})
-            rs = [l["reported"] for l in legs]
-            big.append({"total_odds": c["total_odds"], "prob": c["prob"], "legs": legs,
-                        "reported": "lose" if "lose" in rs else "win" if all(r == "win" for r in rs) else None})
-    return {"date": day, "pronos": rows, "combo": combo, "bets": bets, "message": d.get("message"), "big": big}
+    return {"date": day, "pronos": rows, "combo": combo, "bets": bets, "message": d.get("message")}
 
 
 def bets_payload():
@@ -1328,8 +1309,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, engine.deep_analysis(launch=False))
             if path == "/api/learning":  # ce que Tessbet a appris de ses résultats
                 return self._send(200, read_json(os.path.join(DATA, "calibration.json"), {}) or engine.calibrate())
-            if path == "/api/freebet":  # combiné free bet (cote 10-20), sans crédit
-                return self._send(200, engine.freebet_combos())
             if path == "/api/live/pronos":
                 return self._send(200, live_pronos())
             if path == "/api/proposals":  # tous les pronos suivis et leur résultat (sans rien envoyer)
