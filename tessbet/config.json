@@ -42,6 +42,7 @@
     "max_picks": 3,
     "min_books": 4,
     "min_prob": 0.62,
+    "sport_min_prob": {"hockey": 0.70},
     "min_odds": 1.15,
     "min_edge": -0.05,
     "exclude_draw": true

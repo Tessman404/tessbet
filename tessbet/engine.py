@@ -429,12 +429,17 @@ def select_extra(extras, cfg, exclude=()):
     return picked
 
 
+def min_prob_for(c, s):
+    """Chances minimum pour un prono de confiance (plus exigeant pour certains sports, ex. hockey)."""
+    return max(s["min_prob"], (s.get("sport_min_prob") or {}).get(c.get("sport"), 0))
+
+
 def select(cands, cfg, limit=None):
     s = cfg["selection"]
     limit = limit or s["max_picks"]
     ok = [c for c in cands
           if c.get("playable") and c.get("af_agrees") is not False and c["n_books"] >= s["min_books"]  # cote Winamax obligatoire
-          and c["prob"] >= s["min_prob"] and c["odds"] >= s["min_odds"] and c["edge"] >= s["min_edge"]]
+          and c["prob"] >= min_prob_for(c, s) and c["odds"] >= s["min_odds"] and c["edge"] >= s["min_edge"]]
     ok.sort(key=lambda c: (c["confidence_score"], c["prob"] - 2 * c["dispersion"] + 0.5 * max(c["edge"], 0)),
             reverse=True)
     picked, seen = [], set()
@@ -565,8 +570,8 @@ def select_outsider(cands, cfg, exclude=()):
 def blockers(c, cfg):
     """Pourquoi ce pari ne passe pas les critères du moteur (liste vide = il passe)."""
     s, out = cfg["selection"], []
-    if c["prob"] < s["min_prob"]:
-        out.append(f"{round(c['prob'] * 100)} % de chances, il en faut au moins {round(s['min_prob'] * 100)} %")
+    if c["prob"] < min_prob_for(c, s):
+        out.append(f"{round(c['prob'] * 100)} % de chances, il en faut au moins {round(min_prob_for(c, s) * 100)} %")
     if c["odds"] < s["min_odds"]:
         out.append(f"cote de {fr(c['odds'], 2)}, minimum {fr(s['min_odds'], 2)}")
     if c["n_books"] < s["min_books"]:
@@ -1792,7 +1797,7 @@ def calibrated(sport, p):
     s = (_cal["data"].get("sports") or {}).get(sport) or {}
     if not s.get("active"):
         return p
-    return max(0.01, min(0.99, p * s["ratio"]))
+    return max(0.01, min(0.99, p * min(1.0, s["ratio"])))  # jamais plus confiant, seulement plus prudent
 
 
 def calibrate():
@@ -1838,7 +1843,7 @@ def calibrate():
         g["real_pct"] = round(g["wins"] * 100 / g["n"])
         g["expected_pct"] = round(g["expected"] * 100 / g["n"])
     for g in sports.values():
-        g["ratio"] = round(max(0.92, min(1.03, (g["wins"] + CAL_SHRINK) / (g["expected"] + CAL_SHRINK))), 3)
+        g["ratio"] = round(max(0.92, min(1.0, (g["wins"] + CAL_SHRINK) / (g["expected"] + CAL_SHRINK))), 3)
         g["active"] = g["n"] >= CAL_MIN_N
     out = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "sports": sports, "notes": notes,
            "sent_week": (_cal["data"] or {}).get("sent_week")}
