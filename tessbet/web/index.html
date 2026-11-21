@@ -187,6 +187,10 @@ h2.section { margin: 26px 0 10px; font: 700 1.35rem/1.2 var(--display); color: #
 .topbar .in { max-width: 1080px; margin: 0 auto; padding: 0 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .brand { display: inline-flex; align-items: center; gap: 9px; font: 700 1.5rem/1 var(--display); color: #fff; padding: 12px 0; }
 .brand .mark svg { display: block; }
+.homebtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: none; border-radius: 12px; background: rgba(255,255,255,.08); border: 1px solid var(--turf-3); color: #fff; cursor: pointer; padding: 0; }
+.homebtn:hover, .homebtn:active { background: rgba(255,255,255,.16); }
+.homebtn svg { width: 22px; height: 22px; }
+.homebtn[hidden] { display: none; }
 .topbar nav { display: flex; gap: 2px; overflow-x: auto; flex: 1; scrollbar-width: none; }
 .topbar nav button { background: transparent; border: 0; padding: 14px 14px 11px; color: var(--chalk-dim); font-weight: 600; white-space: nowrap; border-bottom: 3px solid transparent; }
 .topbar nav button:hover { color: #fff; }
@@ -513,6 +517,7 @@ th { color: var(--chalk-dim); font-weight: 600; font-size: .82rem; }
 </div>
 
 <div class="topbar"><div class="in">
+  <button type="button" class="homebtn" id="homebtn" title="Retour à l'accueil" aria-label="Retour à l'accueil" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
   <span class="brand"><span class="mark" aria-hidden="true"><svg width="30" height="30" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"> <defs> <linearGradient id="tbm-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d4d3b"/><stop offset="1" stop-color="#0a2219"/></linearGradient> <linearGradient id="tbm-tk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset="1" stop-color="#ffc61a"/></linearGradient> <clipPath id="tbm-sq"><rect width="512" height="512" rx="116"/></clipPath> </defs> <g clip-path="url(#tbm-sq)"> <rect width="512" height="512" fill="url(#tbm-bg)"/> <circle cx="256" cy="256" r="196" fill="none" stroke="#cfe3d8" stroke-opacity=".10" stroke-width="10"/> <path d="M0 256H512" stroke="#cfe3d8" stroke-opacity=".10" stroke-width="10"/> </g> <g transform="rotate(-9 256 256)"> <path fill="url(#tbm-tk)" d="M110 150h292a26 26 0 0 1 26 26v38a28 28 0 0 0 0 56v66a26 26 0 0 1-26 26H110a26 26 0 0 1-26-26v-66a28 28 0 0 0 0-56v-38a26 26 0 0 1 26-26z"/> <path d="M346 168v176" stroke="#0d2b22" stroke-opacity=".45" stroke-width="7" stroke-dasharray="14 12" stroke-linecap="round"/> <path fill="#0d2b22" d="M128 196h176v44h-64v124h-48v-124h-64z"/> <path d="M370 306l14 16 26-38" fill="none" stroke="#0d2b22" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/> </g> </svg></span>Tessbet</span>
   <nav aria-label="Navigation">
     <button type="button" data-tab="today" aria-current="page">Aujourd'hui</button>
@@ -1957,6 +1962,22 @@ document.addEventListener('visibilitychange', async () => {  // l'app est resté
 (async () => {
   try { await Promise.all([loadToday(), loadStats(), loadBets(), loadSettings()]); renderToday(); renderTrack(); watchWaiting(); }
   catch (e) { document.getElementById('summary').textContent = 'Impossible de joindre le serveur : ' + e.message; }
+})();
+</script>
+<script>
+/* Bouton « Accueil » : visible seulement dans Home Assistant, ramène au tableau de bord */
+(function () {
+  var b = document.getElementById('homebtn');
+  var top = null;
+  try { if (window.top !== window && window.top.document.querySelector('home-assistant')) top = window.top; } catch (e) {}
+  if (!b || !top) return;
+  b.hidden = false;
+  b.addEventListener('click', function () {
+    try {
+      if (top.history.length > 1) top.history.back();
+      else top.location.href = '/';
+    } catch (e) { top.location.href = '/'; }
+  });
 })();
 </script>
 </body>
