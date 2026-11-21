@@ -1812,7 +1812,7 @@ function outsiderPanel(st) {
 function learnPanel() {
   const SP = { football: '⚽ Foot', basketball: '🏀 NBA', tennis: '🎾 Tennis', hockey: '🏒 Hockey', americanfootball: '🏈 NFL' };
   const box = el('div', { class: 'panel' }, el('h2', { text: '🧠 Ce que Tessbet apprend' }),
-    el('p', { class: 'note', text: 'Tessbet compare ses chances annoncées aux résultats réels. Quand un sport se trompe trop souvent (au moins 15 résultats), ses chances sont revues à la baisse automatiquement. Chaque dimanche à 22 h, il fait le bilan de la semaine et ajuste ses seuils tout seul (plus exigeant sur un sport qui perd trop, normal quand ça repart). Tu n'es prévenu que s'il n'y arrive pas.' }));
+    el('p', { class: 'note', text: 'Tessbet compare ses chances annoncées aux résultats réels. Quand un sport se trompe trop souvent (au moins 15 résultats), ses chances sont revues à la baisse automatiquement. Chaque dimanche à 22 h, il fait le bilan de la semaine et ajuste ses seuils tout seul (plus exigeant sur un sport qui perd trop, normal quand ça repart). Tu n’es prévenu que s’il n’y arrive pas.' }));
   api('learning').then(c => {
     const rows = Object.entries(c.sports || {}).sort((a, b) => b[1].n - a[1].n);
     if (!rows.length) { box.append(el('p', { text: 'Pas encore assez de résultats.' })); return; }
