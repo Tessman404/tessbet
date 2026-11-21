@@ -430,8 +430,14 @@ def select_extra(extras, cfg, exclude=()):
 
 
 def min_prob_for(c, s):
-    """Chances minimum pour un prono de confiance (plus exigeant pour certains sports, ex. hockey)."""
-    return max(s["min_prob"], (s.get("sport_min_prob") or {}).get(c.get("sport"), 0))
+    """Chances minimum pour un prono de confiance (plus exigeant pour certains sports, ex. hockey, ou selon le bilan de la semaine)."""
+    return max(s["min_prob"], (s.get("sport_min_prob") or {}).get(c.get("sport"), 0),
+               (weekly_rules().get("fiable_min") or {}).get(c.get("sport"), 0))
+
+
+def min_note_for(sport):
+    """Note minimum pour un « moins sûr » (3/5, relevée à 4/5 pour un sport si le bilan de la semaine l'a décidé)."""
+    return max(MIN_NOTE, (weekly_rules().get("near_min_note") or {}).get(sport, 0))
 
 
 def select(cands, cfg, limit=None):
@@ -1562,7 +1568,7 @@ def run(mode=None, offset=None):
               "combo": combo, "combo_note": combo_note,
               "matches_analysed": analysed, "selections": selections, "claude_dropped": info["dropped"],
               "claude_dropped_items": info.get("dropped_items", []), "unverified": info.get("unverified", 0), "near": [n for n in low + [n for n in near_misses(cands, cfg, limit=8) if n["id"] not in {x["id"] for x in low}]
-                       if n.get("note", 0) >= MIN_NOTE][:4],  # moins sûrs : seulement les notes de 3/5 et plus
+                       if n.get("note", 0) >= min_note_for(n.get("sport"))][:4],  # moins sûrs : note mini 3/5 (plus si le bilan de la semaine l'a relevée)
               "message": msg, "waiting": bool(info.get("waiting")), "fire": info.get("fire"),
               "warnings": warnings, "quota_odds_api_remaining": quota,
               "disclaimer": DISCLAIMER}
@@ -1798,6 +1804,93 @@ def calibrated(sport, p):
     if not s.get("active"):
         return p
     return max(0.01, min(0.99, p * min(1.0, s["ratio"])))  # jamais plus confiant, seulement plus prudent
+
+
+# ---------- Bilan de fin de semaine : Tessbet revoit ses propres règles ----------
+WEEK_WINDOW_D = 28      # on juge sur les 4 dernières semaines (une seule semaine, c'est trop peu)
+FIABLE_MIN_N, FIABLE_LOW, FIABLE_HIGH, FIABLE_STEP, FIABLE_CAP = 6, 0.75, 0.90, 0.02, 0.80
+NEAR_MIN_N, NEAR_LOW, NEAR_HIGH = 8, 0.85, 0.95
+_wk = {"mtime": None, "data": {}}
+
+
+def _weekly_path():
+    return os.path.join(DATA, "weekly_rules.json")
+
+
+def weekly_rules():
+    path = _weekly_path()
+    try:
+        m = os.path.getmtime(path)
+        if m != _wk["mtime"]:
+            with open(path, encoding="utf-8") as f:
+                _wk.update(mtime=m, data=json.load(f))
+    except (OSError, ValueError):
+        return {}
+    return _wk["data"] or {}
+
+
+def weekly_review(today=None, shared=None, cfg=None):
+    """Bilan de la semaine : résultats par type de prono et par sport, puis réglage prudent des seuils.
+    Pronos de confiance : un sport qui gagne moins de 75 % (4 semaines) devient plus exigeant (+2 % de chances), il
+    redevient normal au-dessus de 90 %. Moins sûrs : sous 85 %, il faut 4/5 au lieu de 3/5 ; retour à 3/5 au-dessus de 95 %."""
+    today = today or to_paris(now_utc()).date()
+    if shared is None:
+        try:
+            with open(os.path.join(DATA, "telegram.json"), encoding="utf-8") as f:
+                shared = json.load(f).get("shared") or []
+        except (OSError, ValueError):
+            shared = []
+    cfg = cfg or load_config()
+    rules = json.loads(json.dumps(weekly_rules()))
+    fmin, nmin = rules.setdefault("fiable_min", {}), rules.setdefault("near_min_note", {})
+    week_from = (today - dt.timedelta(days=6)).isoformat()
+    win_from = (today - dt.timedelta(days=WEEK_WINDOW_D - 1)).isoformat()
+    week, window, lost = {}, {}, []
+    for x in shared:
+        tier, rep, d = x.get("tier"), x.get("reported"), x.get("date") or ""
+        if tier not in ("fiable", "value", "moins_sur", "extra", "outsider") or rep not in ("win", "lose") or d > today.isoformat():
+            continue
+        group = "fiable" if tier in ("fiable", "value") else tier
+        sp = x.get("sport") or "football"
+        if d >= win_from:
+            g = window.setdefault((group, sp), [0, 0])
+            g[0] += rep == "win"; g[1] += 1
+        if d >= week_from:
+            g = week.setdefault(group, [0, 0])
+            g[0] += rep == "win"; g[1] += 1
+            if rep == "lose":
+                lost.append({"date": d, "match": x.get("match"), "pick": x.get("pick"), "tier": group, "sport": sp})
+    base = cfg["selection"]
+    changes = []
+    for (group, sp), (w, n) in sorted(window.items()):
+        rate = w / n
+        if group == "fiable" and n >= FIABLE_MIN_N:
+            cur = min_prob_for({"sport": sp}, base)
+            floor = max(base["min_prob"], (base.get("sport_min_prob") or {}).get(sp, 0))
+            if rate < FIABLE_LOW and cur < FIABLE_CAP:
+                fmin[sp] = round(min(FIABLE_CAP, cur + FIABLE_STEP), 2)
+                changes.append({"sport": sp, "what": "fiable", "from": cur, "to": fmin[sp], "rate": rate, "n": n})
+            elif rate >= FIABLE_HIGH and fmin.get(sp, 0) > floor:
+                new = round(max(floor, fmin[sp] - FIABLE_STEP), 2)
+                changes.append({"sport": sp, "what": "fiable", "from": cur, "to": new, "rate": rate, "n": n})
+                if new <= floor:
+                    fmin.pop(sp)
+                else:
+                    fmin[sp] = new
+        if group == "moins_sur" and n >= NEAR_MIN_N:
+            cur = max(MIN_NOTE, nmin.get(sp, 0))
+            if rate < NEAR_LOW and cur < 4:
+                nmin[sp] = 4
+                changes.append({"sport": sp, "what": "moins_sur", "from": cur, "to": 4, "rate": rate, "n": n})
+            elif rate >= NEAR_HIGH and cur > MIN_NOTE:
+                nmin.pop(sp, None)
+                changes.append({"sport": sp, "what": "moins_sur", "from": cur, "to": MIN_NOTE, "rate": rate, "n": n})
+    rules["at"] = today.isoformat()
+    rules.setdefault("log", []).append({"date": today.isoformat(), "changes": changes})
+    rules["log"] = rules["log"][-12:]
+    write_json(_weekly_path(), rules)
+    _wk["mtime"] = None
+    return {"week": week, "window": {f"{g}|{sp}": v for (g, sp), v in window.items()}, "lost": lost, "changes": changes, "rules": rules}
 
 
 def calibrate():

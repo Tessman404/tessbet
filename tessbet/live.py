@@ -3,6 +3,7 @@
 Les scores viennent de l'API publique d'ESPN (sans clé). Elle n'est pas officielle : si elle change, le suivi
 s'arrête sans gêner le reste de Tessbet.
 """
+import html
 import datetime as dt
 import json
 import os
@@ -991,8 +992,12 @@ _learn_at = [0.0]
 SPORT_FR = {"football": "⚽ Foot", "basketball": "🏀 NBA", "tennis": "🎾 Tennis", "hockey": "🏒 Hockey", "americanfootball": "🏈 NFL"}
 
 
+TIER_FR = {"fiable": "🎯 Pronos de confiance", "moins_sur": "🤔 Moins sûrs", "extra": "⚽ Autres paris foot", "outsider": "🎲 Outsiders"}
+
+
 def learning(now=None):
-    """Toutes les heures : Tessbet compare ses chances aux résultats réels. Le lundi matin, il envoie ce qu'il en tire."""
+    """Toutes les heures : Tessbet compare ses chances aux résultats réels.
+    Le dimanche soir (22 h) : bilan de la semaine, réglage des seuils, et récap sur Telegram."""
     now = now or time.time()
     if now - _learn_at[0] < 3600:
         return None
@@ -1000,32 +1005,41 @@ def learning(now=None):
     cal = engine.calibrate()
     paris = engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc))
     week = paris.strftime("%G-W%V")
+    if paris.weekday() != 6 or paris.hour < 22 or cal.get("sent_week") == week:
+        return cal
+    rev = engine.weekly_review(paris.date())  # les seuils sont revus même sans Telegram
+    cal["sent_week"] = week
+    engine.write_json(engine._cal_path(), cal)
     t = _read("telegram.json", {})
     send = {**{"bilan": True}, **(t.get("send") or {})}
-    if paris.weekday() != 0 or paris.hour < 9 or cal.get("sent_week") == week or not (t.get("chat") or {}).get("id") or not send["bilan"]:
+    if not (t.get("chat") or {}).get("id") or not send["bilan"]:
         return cal
-    lines = ["🧠 <b><u>Ce que Tessbet a appris cette semaine</u></b>",
-             "<i>Chances annoncées comparées aux résultats réels, depuis le début.</i>", ""]
-    for sp, g in sorted(cal["sports"].items(), key=lambda kv: -kv[1]["n"]):
-        if g["n"] < 5:
-            continue
-        gap = g["real_pct"] - g["expected_pct"]
-        how = ("✅ fiable" if abs(gap) <= 4 else "📉 trop optimiste" if gap < 0 else "📈 plutôt prudent")
-        act = ""
-        if g["active"] and g["ratio"] < 0.995:
-            act = f" → chances revues à la baisse de {round((1 - g['ratio']) * 100)} %"
-        elif not g["active"]:
-            act = f" (correction à partir de {engine.CAL_MIN_N} résultats)"
-        lines.append(f"{SPORT_FR.get(sp, sp)} : prévu {g['expected_pct']} %, réel <b>{g['real_pct']} %</b> sur {g['n']} – {how}{act}")
-    nl = [f"{k}/5 : {g['real_pct']} % gagnés ({g['n']})" for k, g in sorted(cal["notes"].items(), reverse=True) if g["n"] >= 3]
-    if nl:
-        lines += ["", "<b>Par note</b> : " + " · ".join(nl)]
+    lines = ["🧠 <b><u>Bilan de la semaine : ce que Tessbet en tire</u></b>", ""]
+    for g in ("fiable", "moins_sur", "extra", "outsider"):
+        if g in rev["week"]:
+            w, n = rev["week"][g]
+            lines.append(f"{TIER_FR[g]} : <b>{w}/{n}</b> gagnés ({round(w * 100 / n)} %)")
+    if rev["lost"]:
+        lines += ["", "<b>Perdus cette semaine</b>"]
+        lines += [f"• {x['date'][8:10]}/{x['date'][5:7]} {SPORT_FR.get(x['sport'], '')} {html.escape(x['match'] or '')} ({TIER_FR.get(x['tier'], '')})" for x in rev["lost"][:12]]
+    lines += ["", "<b>Réglages pour la semaine prochaine</b> <i>(sur les 4 dernières semaines)</i>"]
+    for c in rev["changes"]:
+        sp = SPORT_FR.get(c["sport"], c["sport"])
+        if c["what"] == "fiable":
+            verb = "plus exigeant" if c["to"] > c["from"] else "redevient normal"
+            lines.append(f"• {sp}, pronos de confiance : {round(c['rate'] * 100)} % réussis sur {c['n']} → {verb}, "
+                         f"{round(c['to'] * 100)} % de chances minimum (avant {round(c['from'] * 100)} %)")
+        else:
+            lines.append(f"• {sp}, moins sûrs : {round(c['rate'] * 100)} % réussis sur {c['n']} → note minimum {c['to']}/5 (avant {c['from']}/5)")
+    if not rev["changes"]:
+        lines.append("• Rien à changer, les résultats sont conformes.")
+    down = [f"{SPORT_FR.get(sp, sp)} −{round((1 - g['ratio']) * 100)} %" for sp, g in cal["sports"].items() if g["active"] and g["ratio"] < 0.995]
+    if down:
+        lines.append("• Chances revues à la baisse : " + ", ".join(down))
     try:
         tg_send("\n".join(lines))
-        cal["sent_week"] = week
-        engine.write_json(engine._cal_path(), cal)
     except Exception as e:
-        print("telegram (apprentissage) :", str(e)[:100], file=sys.stderr)
+        print("telegram (bilan semaine) :", str(e)[:100], file=sys.stderr)
     return cal
 
 
