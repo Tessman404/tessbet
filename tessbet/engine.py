@@ -1806,7 +1806,7 @@ def calibrated(sport, p):
     return max(0.01, min(0.99, p * min(1.0, s["ratio"])))  # jamais plus confiant, seulement plus prudent
 
 
-# ---------- Bilan de fin de semaine : Tessbet revoit ses propres règles ----------
+# ---------- Bilan tous les 3 jours : Tessbet revoit ses propres règles ----------
 WEEK_WINDOW_D = 28      # on juge sur les 4 dernières semaines (une seule semaine, c'est trop peu)
 FIABLE_MIN_N, FIABLE_LOW, FIABLE_HIGH, FIABLE_STEP, FIABLE_CAP = 6, 0.75, 0.90, 0.02, 0.80
 NEAR_MIN_N, NEAR_LOW, NEAR_HIGH = 8, 0.85, 0.95

@@ -994,9 +994,12 @@ SPORT_FR = {"football": "⚽ Foot", "basketball": "🏀 NBA", "tennis": "🎾 Te
 _review_alerted = [None]
 
 
+REVIEW_EVERY_D = 3  # Tessbet se remet en question tous les 3 jours
+
+
 def learning(now=None):
     """Toutes les heures : Tessbet compare ses chances aux résultats réels.
-    Du dimanche 22 h au lundi soir : bilan de la semaine et réglage des seuils, en silence.
+    Tous les 3 jours, à partir de 22 h : bilan et réglage des seuils, en silence.
     Seulement si le bilan échoue : une alerte sur le téléphone (une fois), puis nouvel essai chaque heure."""
     now = now or time.time()
     if now - _learn_at[0] < 3600:
@@ -1004,25 +1007,23 @@ def learning(now=None):
     _learn_at[0] = now
     cal = engine.calibrate()
     paris = engine.to_paris(dt.datetime.fromtimestamp(now, dt.timezone.utc))
-    if paris.weekday() == 6 and paris.hour >= 22:
-        sunday = paris.date()
-    elif paris.weekday() == 0:
-        sunday = paris.date() - dt.timedelta(days=1)
-    else:
-        return cal
-    week = sunday.strftime("%G-W%V")
-    if cal.get("sent_week") == week:
+    try:
+        last = dt.date.fromisoformat(cal.get("sent_week") or "")
+    except ValueError:
+        last = None  # ancien format (semaine) : bilan dès ce soir
+    today = paris.date()
+    if paris.hour < 22 or (last and (today - last).days < REVIEW_EVERY_D):
         return cal
     try:
-        engine.weekly_review(sunday)
-        cal["sent_week"] = week
+        engine.weekly_review(today)
+        cal["sent_week"] = today.isoformat()
         engine.write_json(engine._cal_path(), cal)
     except Exception as e:
-        print("bilan de la semaine :", str(e)[:200], file=sys.stderr)
-        if _review_alerted[0] != week:
-            _review_alerted[0] = week
+        print("bilan :", str(e)[:200], file=sys.stderr)
+        if _review_alerted[0] != today:
+            _review_alerted[0] = today
             try:
-                engine.send_phone("Tessbet", f"Je n'ai pas réussi à faire le bilan de la semaine ({str(e)[:80]}). Je réessaie chaque heure.",
+                engine.send_phone("Tessbet", f"Je n'ai pas réussi à faire mon bilan ({str(e)[:80]}). Je réessaie chaque heure.",
                                   tag="tessbet-bilan")
             except Exception as e2:
                 print("alerte bilan :", str(e2)[:100], file=sys.stderr)
